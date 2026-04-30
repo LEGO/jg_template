@@ -9,23 +9,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from omegaconf import OmegaConf
 from common.spark_helper import get_spark_session
-from common.utils import get_logger
+from common.utils import get_logger, load_model_config
 from common.mlflow_helper import start_mlflow_experiment_and_run, set_champion_alias_on_logged_model
 from pathlib import Path
 
 logger = get_logger()
 
+config_path = Path(__file__).parent / "model_config.yml"
 
-def _load_model_config() -> dict:
-    '''
-    Loads the model configuration from a YAML file.
-
-    Returns:
-        dict: The model configuration.
-
-    '''
-    config_path = Path(__file__).parent / "model_config.yml"
-    return OmegaConf.load(config_path)
 
 def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
     '''
@@ -52,7 +43,7 @@ def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
         order_by=["start_time DESC"],
     )
 
-    cfg = _load_model_config()
+    cfg = load_model_config(config_path=config_path)
     type_map: dict = {
         param: spec["type"]
         for param, spec in OmegaConf.to_container(cfg.tuning, resolve=True).items()
@@ -92,7 +83,7 @@ def train_model(
         model_alias (str, optional): The alias to assign to the trained model. Defaults to "champion".
         hyperparameter_experiment_path (str | None, optional): If provided, the MLflow experiment path to fetch the best hyperparameters from. Defaults to None.
     '''
-    cfg = _load_model_config()
+    cfg = load_model_config(config_path=config_path)
 
     if hyperparameter_experiment_path:
         try: 

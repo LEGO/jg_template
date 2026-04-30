@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+
+from omegaconf import OmegaConf
 
 
 def get_logger() -> logging.Logger:
@@ -21,3 +24,13 @@ def get_logger() -> logging.Logger:
     logging.getLogger("urllib3").setLevel(logging.WARN)
     logging.getLogger("tensorflow").setLevel(logging.ERROR)
     return logger
+
+def load_model_config(config_path: str) -> dict:
+    '''
+    Loads the model configuration from a YAML file.
+
+    Returns:
+        dict: The model configuration.
+
+    '''
+    return OmegaConf.load(config_path)
