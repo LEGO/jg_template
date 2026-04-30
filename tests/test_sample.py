@@ -1,13 +1,6 @@
 import logging
 from pathlib import Path
 
-import numpy as np
-import pytest
-from omegaconf import OmegaConf
-from sklearn.linear_model import Lasso
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
-
 from common.utils import get_logger, load_model_config
 
 
