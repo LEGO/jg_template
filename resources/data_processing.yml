@@ -1,0 +1,53 @@
+# Ingestion job for data preprocessing in MLOps pipeline.
+
+resources:
+  jobs:
+    data_preprocessing_job:
+      name: data_preprocessing_job
+
+      schedule:
+        quartz_cron_expression: "0 0 4 ? * MON"
+        timezone_id: Europe/Copenhagen
+        pause_status: ${var.pause_status}
+
+      tasks:
+        - task_key: data_processing
+          python_wheel_task:
+            package_name: mlops_pipeline
+            entry_point: data_processing_job
+            named_parameters:
+              catalog_name: ${var.catalog}
+              schema_name: ${var.schema}
+              table_name: anime_bronze
+              feature_store_table_name: ${var.feature_store_table_name}
+              experiment_path: ${var.experiment_path}_data_preprocessing
+              
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../dist/*.whl
+       
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 17.3.x-cpu-ml-scala2.13
+            node_type_id: i3.2xlarge
+            policy_id: ${var.policy_id}
+            data_security_mode: SINGLE_USER
+            aws_attributes:
+              first_on_demand: 1
+              zone_id: "auto"
+            autoscale:
+              min_workers: 4
+              max_workers: 8
+            spark_conf:
+              spark.task.cpus: "2"
+              spark.sql.execution.arrow.maxRecordsPerBatch: "100"
+              spark.executor.memory: "48g"
+              spark.executor.memoryOverhead: "8g"
+              spark.driver.memory: "16g"
+            custom_tags:
+              SOURCE: "table"
+
+      permissions:
+        - group_name: c1.app.access.sscdp.ai_agency.developer
+          level: CAN_MANAGE_RUN

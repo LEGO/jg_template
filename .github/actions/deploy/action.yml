@@ -1,0 +1,25 @@
+name: Deploy
+description: Deployment Action
+
+inputs:
+  auto_approve:
+    description: "Auto-approve deployment allows potential destructive change"
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install UV
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+    - name: Deploy
+      shell: bash
+      working-directory: .
+      run: |
+        if [ "${{ inputs.auto_approve }}" = "true" ]; then
+          databricks bundle deploy --target=${{ inputs.environment }} --auto-approve
+        else
+          databricks bundle deploy --target=${{ inputs.environment }}
+        fi

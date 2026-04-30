@@ -1,0 +1,213 @@
+# Architecture Documentation
+
+## System Overview
+
+This template assumes that data is already ingested into Unity Catalog. If that is not the case please have a look at [LEGO Nexus workflow generator](https://github.com/LEGO/nexus-workflow-generator).
+
+The template sets up a mocked ML pipeline using sandbox data on Databricks that enables anime score prediction both on a managed serving endpoint and in batch inference runs.
+
+**Core flow:** Anime Bronze data → Feature Engineering → Delta tables → Model Training → REST API + Batch Inference
+
+### Architecture Principles
+
+1. **Separation of concerns** – Each pipeline stage is independent
+2. **Data versioning** – Unity Catalog with Delta Lake
+3. **Model versioning** – MLflow Model Registry
+4. **Configuration as code** – Databricks bundles (YAML)
+5. **Scalability** – Spark for data processing, scikit-learn for training
+
+---
+
+## Pipeline Components
+
+Four sequential stages:
+
+### 1. Data Preprocessing
+- **Entry:** [`data_preprocessing.py`](../src/mlops_pipeline/data_preprocessing.py)
+- **Job:** [`data_processing.yml`](../resources/data_processing.yml)
+- Reads `anime_bronze` from Unity Catalog, casts `Score` to float, one-hot encodes genres, and logs the dataset to MLflow.
+- **Output:** `anime_features` Delta table
+- **Schedule:** Weekly, Mondays 04:00 CET
+
+### 2. Model Training
+- **Entry:** [`train_model.py`](../src/mlops_pipeline/model/train_model.py)
+- **Job:** [`model_training.yml`](../resources/model_training.yml)
+- Trains a Lasso regression model on genre features to predict anime scores. Logs parameters, metrics, and the model artifact to MLflow. Registers the model and sets the `champion` alias.
+- **Cluster:** CPU (i3.2xlarge, Runtime 17.3.x ML CPU)
+- **Schedule:** Weekly, Mondays 06:00 CET
+- **Output:** Registered model in MLflow Registry with `champion` alias
+
+### 3. Model Serving
+- **Entry:** [`serve.py`](../src/mlops_pipeline/model/serve.py)
+- **Job:** [`model_training.yml`](../resources/model_training.yml) (`serve_model` task, depends on `train_model`)
+- Deploys the champion model to a Databricks serving endpoint. Configures access permissions and workload size.
+- **Compute:** CPU-optimized serving endpoint
+
+### 4. Batch Prediction
+- **Entry:** [`batch_prediction.py`](../src/mlops_pipeline/batch_prediction.py)
+- **Job:** [`model_training.yml`](../resources/model_training.yml) (`batch_inference_task`, depends on `train_model`)
+- Loads the `champion` model from the MLflow Registry, runs predictions on a random subset of the feature table, and upserts results into the predictions Delta table.
+- **Output:** `anime_score_predictor_batch_predictions` Delta table
+
+---
+
+## Data Architecture
+
+### Unity Catalog Structure
+
+```
+ai_enablement (catalog)
+└── general_resources (schema)
+    ├── anime_bronze (Delta)           # Raw source data
+    ├── anime_features (Delta)         # Preprocessed features
+    └── anime_score_predictor_batch_predictions (Delta)  # Batch inference output
+```
+
+### Key Schemas
+
+**anime_bronze:**
+```
+MAL_ID: string
+Name: string
+Score: string
+Genres: string
+Synopsis: string
+```
+
+**anime_features:**
+```
+Name: string
+Score: float
+Seinen: int
+Romance: int
+...
+Parody: int
+Sci-Fi: int
+```
+
+**anime_score_predictor_batch_predictions:**
+```
+Name: string
+Score: float
+Seinen: int
+Romance: int
+...
+Parody: int
+Sci-Fi: int
+Predicted_Score: float
+```
+
+---
+
+## Model Architecture
+
+### Lasso Regression
+
+- **Algorithm:** Lasso (L1-regularized linear regression) via scikit-learn
+- **Target:** `Score` (anime rating, float)
+- **Features:** One-hot encoded genre columns (all columns except `Name` and `Score`)
+- **Config:** [`model_config.yml`](../src/mlops_pipeline/model/model_config.yml)
+  ```yaml
+  lasso:
+    alpha: 1.0
+    max_iter: 1000
+    random_state: 42
+  columns:
+    target_name: Score
+    id: Name
+  ```
+- **Metrics logged:** RMSE on 20% holdout test set
+- **Registry:** MLflow Model Registry (Unity Catalog) with `champion` alias
+
+---
+
+## Deployment
+
+### Databricks Bundle
+
+**Config:** [`databricks.yml`](../databricks.yml)
+
+**Targets:** dev, qa, prod (environment-specific configs)
+
+**Key variables (dev):**
+```yaml
+catalog: ai_enablement
+schema: general_resources
+model_name: anime_score_predictor
+feature_store_table_name: anime_features
+batch_prediction_table: anime_score_predictor_batch_predictions
+experiment_path: /Shared/mlops_pipeline/dev/<user>/<model_name>
+```
+
+### Cluster Configurations
+
+1. **Data preprocessing:**
+   - Runtime: 17.3.x-cpu-ml-scala2.13
+   - Node: i3.2xlarge
+   - Autoscaling: 4–8 workers
+
+2. **Model training, serving & batch inference:**
+   - Runtime: 17.3.x-cpu-ml-scala2.13
+   - Node: i3.2xlarge
+   - Autoscaling: 1 worker (fixed)
+
+### Job Dependencies
+
+```
+data_preprocessing_job
+    └── task: data_processing
+
+model_training_job
+    ├── task: train_model
+    ├── task: serve_model         (depends_on: train_model)
+    └── task: batch_inference_task (depends_on: train_model)
+```
+
+### MLflow Integration
+
+**Model Registry workflow:**
+```
+Training → Log model → Register → Set alias ("champion")
+                                          ↓
+                              Serving endpoint + Batch inference
+```
+
+**Model versioning:**
+- Each training run creates a new registered model version
+- `champion` alias is updated to point to the latest trained version
+- Aliases: `champion`
+
+---
+
+## Technology Stack
+
+| Component | Technology |
+|-----------|-----------|
+| **Platform** | Databricks |
+| **Compute** | Apache Spark |
+| **Storage** | Unity Catalog (Delta Lake) |
+| **ML Framework** | scikit-learn (Lasso) |
+| **Model Serving** | Databricks Model Serving |
+| **ML Tracking** | MLflow |
+| **Config** | OmegaConf (YAML) |
+| **IaC** | Databricks Bundles (YAML) |
+| **Package Manager** | uv |
+| **CI/CD** | GitHub Actions |
+
+### Python Dependencies
+
+```toml
+omegaconf = ">=2.3.0"
+scikit-learn = ">=1.7.2"
+mlflow = ">=3.8.1"
+databricks-connect = ">=15.4,<15.5"
+```
+
+---
+
+## References
+
+- [Databricks Bundles](https://docs.databricks.com/en/dev-tools/bundles/index.html)
+- [MLflow Model Registry](https://mlflow.org/docs/latest/model-registry.html)
+- [scikit-learn Lasso](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Lasso.html)
+- [OmegaConf](https://omegaconf.readthedocs.io/)

@@ -1,0 +1,46 @@
+name: Databricks Deploy (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Deployment environment (dev, qa, prod)"
+        required: true
+        type: string
+      auto_approve:
+        description: "Auto-approve deployment allowing potential destructive changes"
+        required: false
+        type: string
+        default: "true"
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      DATABRICKS_BUNDLE_ENV: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: databricks/setup-cli@main
+
+      - name: Validate Databricks Asset Bundle configuration
+        uses: ./.github/actions/validate
+      
+      - name: Summary before deployment
+        uses: ./.github/actions/summary
+
+      - name: Deploy Databricks Asset Bundle
+        uses: ./.github/actions/deploy
+        with:
+          auto_approve: ${{ inputs.auto_approve }}
+
+      - name: Summary after deployment
+        uses: ./.github/actions/summary

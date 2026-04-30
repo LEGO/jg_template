@@ -1,0 +1,12 @@
+.env
+env/
+.databricks/
+build/
+__pycache__/
+*.egg-info
+.venv/
+scratch/**
+!scratch/README.md
+.pytest_cache/
+.DS_Store
+.vscode/settings.json

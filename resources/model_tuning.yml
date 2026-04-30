@@ -1,0 +1,50 @@
+# Hyperparameter tuning job for MLOps pipeline.
+
+resources:
+  jobs:
+    model_hyperparameter_tuning_job:
+      name: model_hyperparameter_tuning_job
+
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON#1"
+        timezone_id: Europe/Copenhagen
+        pause_status: ${var.pause_status}
+
+      #email_notifications:
+      #  on_failure:
+      #    - your_email@example.com
+
+      tasks:
+        - task_key: hyperparameter_tuning
+          python_wheel_task:
+            package_name: mlops_pipeline
+            entry_point: model_tuning_ray_job
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_name: ${var.model_name}_hyperparameter_tuning
+              feature_store_table_name: ${var.feature_store_table_name}
+              experiment_path: ${var.experiment_path}_hyperparameter_tuning
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../dist/*.whl
+        
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 17.3.x-cpu-ml-scala2.13
+            node_type_id: i3.2xlarge
+            policy_id: ${var.policy_id}
+            data_security_mode: SINGLE_USER
+            aws_attributes:
+              first_on_demand: 1
+              zone_id: "auto"
+            autoscale:
+              min_workers: 1
+              max_workers: 1
+            custom_tags:
+              SOURCE: "table"
+
+      permissions:
+        - group_name: c1.app.access.sscdp.ai_agency.developer
+          level: CAN_MANAGE_RUN

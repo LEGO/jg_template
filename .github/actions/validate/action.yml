@@ -1,0 +1,12 @@
+name: Validate
+description: Validates Databricks Asset Bundle configuration
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate Databricks Asset Bundle configuration
+      shell: bash
+      working-directory: .
+      run: |
+        databricks bundle validate
+

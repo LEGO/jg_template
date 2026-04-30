@@ -1,0 +1,84 @@
+name: Databricks CI/CD (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+
+      auto_approve:
+        description: "Auto-approve deployment allowing potential destructive changes"
+        required: false
+        type: string
+        default: "true"
+      dev_branch_pattern:
+        description: "Branch ref prefix that triggers dev deployment"
+        required: false
+        type: string
+        default: "refs/heads/feature/"
+      qa_branch:
+        description: "Branch ref that triggers QA deployment"
+        required: false
+        type: string
+        default: "refs/heads/main"
+      release_branch:
+        description: "Branch ref that triggers prod deployment"
+        required: false
+        type: string
+        default: "refs/heads/release"
+      source_dirs:
+        description: "Source directories to lint"
+        required: false
+        type: string
+        default: "src/"
+      test_dirs:
+        description: "Test directories to run"
+        required: false
+        type: string
+        default: "tests/"
+      dependency_group:
+        description: "uv extra dependency group to install"
+        required: false
+        type: string
+        default: "test"
+      pytest_args:
+        description: "Additional pytest arguments"
+        required: false
+        type: string
+        default: "-v --tb=short"
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/unit_test.yml
+    with:
+      test_dirs: ${{ inputs.test_dirs }}
+      dependency_group: ${{ inputs.dependency_group }}
+      pytest_args: ${{ inputs.pytest_args }}
+
+  deploy-dev:
+    needs: [test]
+    if: ${{ startsWith(github.ref, inputs.dev_branch_pattern) }}
+    uses: ./.github/workflows/databricks_deploy.yml
+    secrets: inherit
+    with:
+      environment: dev
+      auto_approve: ${{ inputs.auto_approve }}
+
+  deploy-qa:
+    needs: [test]
+    if: ${{ github.ref == inputs.qa_branch }}
+    uses: ./.github/workflows/databricks_deploy.yml
+    secrets: inherit
+    with:
+      environment: qa
+      auto_approve: ${{ inputs.auto_approve }}
+
+  deploy-prod:
+    needs: [test]
+    if: ${{ startsWith(github.ref, inputs.release_branch) }}
+    uses: ./.github/workflows/databricks_deploy.yml
+    secrets: inherit
+    with:
+      environment: prod
+      auto_approve: ${{ inputs.auto_approve }}

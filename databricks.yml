@@ -1,0 +1,82 @@
+bundle:
+  name: mlops_pipeline
+
+include:
+  - resources/*
+
+artifacts:
+  default:
+    type: whl
+    build: uv build
+    path: .
+
+variables:
+  environment:
+    description: The deployment environment
+  catalog:
+    description: The catalog to use
+    default: ai_enablement
+  schema:
+    description: The schema to use
+    default: general_resources
+  feature_store_table_name:
+    description: The name of the feature store table
+    default: anime_features
+  batch_prediction_table:
+    description: The name of the batch prediction table
+    default: ${var.model_name}_batch_predictions
+  model_name:
+    description: The name of the feature model
+    default: anime_score_predictor
+  experiment_path:
+    description: The path to the mlflow experiment
+    default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.model_name}
+  pause_status:
+    description: The default pause status for jobs
+  policy_id:
+    description: Policy ID for cluster
+    lookup:
+      cluster_policy: Job Cluster Policy
+  databricks_host:
+    description: The Databricks workspace host URL
+  secret_scope:
+    description: The secret scope for the deployment environment
+  permission_group:
+    description: Databricks permission group to grant access to the deployed assets
+    default: c1.app.access.sscdp.aiops_dev.developer
+
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: https://lego-ssc-dev.cloud.databricks.com
+    variables:
+      environment: dev
+      pause_status: PAUSED
+      policy_id: A963D86B02001DC8
+      databricks_host: https://lego-ssc-dev.cloud.databricks.com
+      secret_scope: ${var.catalog}.dev.sp.secret_scope
+
+  qa:
+    mode: production
+    workspace:
+      host: https://lego-ssc-qa.cloud.databricks.com
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:      
+      environment: qa
+      pause_status: PAUSED
+      policy_id: A96377E9F70003FA
+      databricks_host: https://lego-ssc-qa.cloud.databricks.com
+      secret_scope: ${var.catalog}.qa.sp.secret_scope
+
+  prod:
+    mode: production
+    workspace:
+      host: https://lego-ssc-prod.cloud.databricks.com
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      environment: prod
+      pause_status: UNPAUSED
+      policy_id: A96377E9F70003FE
+      databricks_host: https://lego-ssc-prod.cloud.databricks.com
+      secret_scope: ${var.catalog}.prod.sp.secret_scope

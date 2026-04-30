@@ -1,0 +1,12 @@
+name: Summary
+description: Summarizes Databricks resources deployed by the bundle
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Summary of Databricks resources deployed by the bundle
+      shell: bash
+      working-directory: .
+      run: |
+        databricks bundle summary

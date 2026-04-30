@@ -1,0 +1,30 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, "feature/**", "release/**"]
+  workflow_dispatch:
+    inputs:
+      auto_approve:
+        description: "Auto-approve deployment allowing potential destructive changes"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+
+concurrency:
+  group: ${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ci-cd:
+    uses: ./.github/workflows/databricks_ci_cd.yml
+    secrets: inherit
+    with:
+      auto_approve: "true"
