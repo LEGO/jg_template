@@ -1,5 +1,5 @@
 from enum import Enum
-from common import get_logger
+from common.utils import get_logger
 import argparse
 
 import mlflow
