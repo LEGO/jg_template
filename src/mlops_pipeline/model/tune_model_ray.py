@@ -4,7 +4,6 @@ from typing import Any
 
 import mlflow
 import numpy as np
-from mlflow.data.numpy_dataset import from_numpy
 from mlflow.models import infer_signature
 from omegaconf import OmegaConf
 import ray.train as ray_train
@@ -14,18 +13,15 @@ from ray.tune.search.optuna import OptunaSearch
 from ray.air.integrations.mlflow import MLflowLoggerCallback
 from sklearn.ensemble import AdaBoostRegressor
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
 
 from common.mlflow_helper import set_champion_alias_on_logged_model, start_mlflow_experiment_and_run
 from common.spark_helper import get_spark_session
-from common.utils import get_logger
+from common.utils import get_logger, load_model_config
+from mlops_pipeline.model.train_model import prepare_data
 
 logger = get_logger()
 
-
-def _load_model_config() -> dict:
-    config_path = Path(__file__).parent / "model_config.yml"
-    return OmegaConf.load(config_path)
+config_path = Path(__file__).parent / "model_config.yml"
 
 
 def _build_search_space(tuning_params: dict) -> dict:
@@ -68,29 +64,18 @@ def tune_model_ray(
         experiment_path: MLflow experiment path.
         model_alias: Alias to assign to the best registered model version.
     """
-    cfg = _load_model_config()
+    cfg = load_model_config(config_path=config_path)
     column_params: dict = OmegaConf.to_container(cfg.columns, resolve=True)
     tuning_params: dict = OmegaConf.to_container(cfg.tuning, resolve=True)
 
-    id_col = column_params.get("id")
-    target_col = column_params.get("target_name")
     n_trials = tuning_params.get("n_trials", 20)
-
-    logger.info("Preparing data for tuning.")
-    pdf = dataframe.toPandas()
-    feature_cols = [c for c in pdf.columns if c not in (id_col, target_col)]
-    X = pdf[feature_cols].values
-    y = pdf[target_col].values
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # Start parent MLflow run to group all trials
     start_mlflow_experiment_and_run(experiment_path)
     parent_run_id = mlflow.active_run().info.run_id
     logger.info(f"Started parent tuning run: {parent_run_id}")
 
-    mlflow.log_input(from_numpy(X_train, targets=y_train, name="train"), context="training")
-    mlflow.log_input(from_numpy(X_test, targets=y_test, name="test"), context="test")
+    X_train, X_test, y_train, y_test = prepare_data(dataframe, column_params)
     mlflow.log_param("n_trials", n_trials)
 
     def trainable(config: dict) -> None:
