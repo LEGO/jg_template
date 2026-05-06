@@ -27,7 +27,7 @@ variables:
     default: ${var.model_name}_batch_predictions
   model_name:
     description: The name of the feature model
-    default: anime_score_predictor_2
+    default: anime_score_predictor
   experiment_path:
     description: The path to the mlflow experiment
     default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.model_name}
