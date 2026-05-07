@@ -8,7 +8,7 @@ The test suite is (arguably) compliant with level 2 of https://baseplate.legogro
 
 Explanation: 
 CI1) Unit tests are designed to test individual components of the code in isolation, ensuring that each function or class behaves as expected. 
-CI2) Integration tests, on the other hand, verify that different components of the ML pipeline work together correctly, catching issues that may arise from the interaction between components. 
+CI2) Integration test is effectively done on the NEXUS dev environment. Also in the deployment pipeline we validate the bundle. 
 
 Caveat: this test suite is very narrow by design as it serves as an example. For business critical pipelines, you would want to expand this test suite to cover more edge cases and potential failure points.
 Furthermore proper integration tests are missing in this version. 
