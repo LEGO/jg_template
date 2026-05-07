@@ -10,12 +10,16 @@ resources:
         timezone_id: Europe/Copenhagen
         pause_status: ${var.pause_status}
 
+      #email_notifications: #NOTE Uncomment and set your email to receive notifications on job failure.
+      #  on_failure:
+      #    - your_email@example.com
+      
       tasks:
         - task_key: data_processing
           python_wheel_task:
             package_name: mlops_pipeline
             entry_point: data_processing_job
-            named_parameters:
+            named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog_name: ${var.catalog}
               schema_name: ${var.schema}
               table_name: anime_bronze

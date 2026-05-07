@@ -1,6 +1,14 @@
 from pyspark.sql import DataFrame, SparkSession
 from delta.tables import DeltaTable
+from databricks.feature_store import FeatureStoreClient
 
+from typing import List
+
+from common.utils import get_logger
+
+logger = get_logger()
+
+fs = FeatureStoreClient()
 
 def get_spark_session(name: str) -> SparkSession:
     """Gets the active Spark session or creates a new one if none exists.
@@ -42,3 +50,29 @@ def upsert_delta_table(spark: SparkSession, dataframe: DataFrame, fully_qualifie
         ).whenMatchedUpdateAll() \
          .whenNotMatchedInsertAll() \
          .execute()
+
+def register_delta_table_in_feature_store(spark: SparkSession,
+                                          fully_qualified_path: str, 
+                                          primary_keys: List[str]
+                                          ) -> None:
+    '''Registers a Delta table in the Databricks Feature Store with specified primary keys.
+    
+    '''
+    
+    try: 
+        fs.get_table(name = fully_qualified_path)
+        logger.info(f"Artifact already registered in feature store ({fully_qualified_path})!")
+        
+    except: 
+        table_name = fully_qualified_path.split(".")[-1]
+
+        for primary_key in primary_keys: 
+            
+            spark.sql(f"ALTER TABLE {fully_qualified_path} ALTER COLUMN {primary_key} SET NOT NULL")
+
+            spark.sql(f"ALTER TABLE {fully_qualified_path} ADD CONSTRAINT {table_name}_pk PRIMARY KEY({primary_key})")
+        
+        fs.register_table(delta_table=fully_qualified_path,
+                          primary_keys=primary_keys,
+                          description="Anime scoring features. This contains anime Name, genre and score.")  
+        logger.info(f"Artifact registered in feature store ({fully_qualified_path})!")

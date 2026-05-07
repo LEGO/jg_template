@@ -14,6 +14,14 @@ from common.utils import get_logger
 
 logger = get_logger()
 
+'''Data preprocessing script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/1-mlops-data-preparation/#data-preparation and level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/8-mlops-feature-store/#feature-store.
+
+Explanation: 
+DP1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_genre_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
+DP2) Features are stored in a feature store, making them readily available for training and inference.
+FS1) The feature store is updated with live features as the model demands, ensuring that the most up-to-date features are available for training and inference.
+'''
+
 
 def fix_data_types(dataframe: DataFrame) -> DataFrame:
     """Fixes data types in the source table to ensure compatibility with the feature model training pipeline."""
@@ -114,6 +122,17 @@ def main() -> None:
     upsert_delta_table(spark, dataframe, fully_qualified_feature_table_name, primary_key="Name")
     mlflow.log_param("feature_table", fully_qualified_feature_table_name)
 
+    ''' 
+    Optionally, add the preprocessed features to the feature store here!
+
+    Registering the feature table in the feature store allows it to be easily discoverable and accessible for training and inference and visible in the Databricks platform UI. 
+    Adding it to the UI is optional and can be done with common.spark_helper.register_delta_table_in_feature_store
+    
+    Feature Store enforces a primary key for feature tables, which is useful for ensuring data integrity and enabling efficient retrieval of features during model training and inference. 
+    The primary key allows the feature store to manage updates and ensure that the correct features are associated with the correct entities (e.g., users, products) in the dataset.
+    Further it ensures that features are not duplicated and adds unwanted bias to model training. 
+    '''
+     
     mlflow.end_run()
 
 if __name__ == "__main__":

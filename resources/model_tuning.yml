@@ -10,7 +10,7 @@ resources:
         timezone_id: Europe/Copenhagen
         pause_status: ${var.pause_status}
 
-      #email_notifications:
+      #email_notifications: #NOTE Uncomment and set your email to receive notifications on job failure.
       #  on_failure:
       #    - your_email@example.com
 
@@ -19,7 +19,7 @@ resources:
           python_wheel_task:
             package_name: mlops_pipeline
             entry_point: model_tuning_ray_job
-            named_parameters:
+            named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
               schema: ${var.schema}
               model_name: ${var.model_name}_hyperparameter_tuning

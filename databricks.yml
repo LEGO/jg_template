@@ -10,7 +10,7 @@ artifacts:
     build: uv build
     path: .
 
-variables:
+variables: #NOTE Defined at the bundle level to be shared across all jobs, and can be overridden at the target level if needed.
   environment:
     description: The deployment environment
   catalog:
