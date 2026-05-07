@@ -20,10 +20,10 @@ The data preprocessing script is compliant with level 2 of https://baseplate.leg
 The data preprocessing script is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/10-mlops-data-monitoring/.
 
 Explanation: 
-DP1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_genre_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
-DP2) Features are stored in a feature store, making them readily available for training and inference.
-FS1) The feature store is updated with live features as the model demands, ensuring that the most up-to-date features are available for training and inference.
-DM1) Basic data monitoring is implemented by logging the number of rows preprocessed to MLflow. This allows for tracking changes in the data volume over time, which can be an indicator of data quality issues or changes in the underlying data distribution. However, a production implementation should include much more comprehensive data monitoring, e.g. including monitoring of feature drift, data quality etc.
+Data Preprocessing 1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_genre_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
+Data Preprocessing 2) Features are stored in a unity catalog that serves as a "feature store", making them readily available for training and inference.
+Feature Store 1) The unity catalog table is updated on schedule as the model demands, ensuring that the most up-to-date features are available for training and inference.
+Data Monitoring 1) Basic data monitoring is implemented by logging the number of rows preprocessed to MLflow. This allows for tracking changes in the data volume over time, which can be an indicator of data quality issues or changes in the underlying data distribution. However, a production implementation should include much more comprehensive data monitoring, e.g. including monitoring of feature drift, data quality etc.
 '''
 
 
@@ -128,14 +128,8 @@ def main() -> None:
     mlflow.log_param("feature_table", fully_qualified_feature_table_name)
 
     ''' 
-    Optionally, add the preprocessed features to the feature store here!
-
-    Registering the feature table in the feature store allows it to be easily discoverable and accessible for training and inference and visible in the Databricks platform UI. 
-    Adding it to the UI is optional and can be done with common.spark_helper.register_delta_table_in_feature_store
-    
-    Feature Store enforces a primary key for feature tables, which is useful for ensuring data integrity and enabling efficient retrieval of features during model training and inference. 
-    The primary key allows the feature store to manage updates and ensure that the correct features are associated with the correct entities (e.g., users, products) in the dataset.
-    Further it ensures that features are not duplicated and adds unwanted bias to model training. 
+    Registering the feature table in the Databricks Feature Store makes the table visible in the Feature Store tab on the Web UI. The underlying table is still a Delta table in the Unity Catalog. 
+    Adding it to the code is optional and can be done with common.spark_helper.register_delta_table_in_feature_store. 
     '''
      
     mlflow.end_run()

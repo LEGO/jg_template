@@ -8,8 +8,8 @@ from common.utils import get_logger
 logger = get_logger()
 
 ''' 
-Model Evaluation is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/3-mlops-model-evaluation/#model-evaluation. 
-Model Monitoring is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/5-mlops-model-monitoring/#model-monitoring. 
+Model Evaluation(ME) is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/3-mlops-model-evaluation/#model-evaluation. 
+Model Monitoring(MM) is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/5-mlops-model-monitoring/#model-monitoring. 
 
 Explanation: 
 ME1) Model evaluation is closely connected with logging experiments and metrics properly. Having logged metrics we are set up for creating a sophisticated model promotion strategy that allows us to evaluate new runs against old deployments automatically using the mlflow api. 

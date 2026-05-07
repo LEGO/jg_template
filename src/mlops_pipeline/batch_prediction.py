@@ -16,7 +16,7 @@ logger = get_logger()
 Batch prediction script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/4-mlops-model-serving/#model-serving. 
 
 Explanation: 
-MS1) Making predictions automatically available and new versions of a model are automatically made available for batch prediction by using the model registry with a "champion" alias that is updated as new models are trained. 
+Model Serving 1) Making predictions automatically available and new versions of a model are automatically made available for batch prediction by using the model registry with a "champion" alias that is updated as new models are trained. 
 '''
 
 

@@ -56,7 +56,13 @@ def register_delta_table_in_feature_store(spark: SparkSession,
                                           primary_keys: List[str]
                                           ) -> None:
     '''Registers a Delta table in the Databricks Feature Store with specified primary keys.
-    
+
+    Usage: Feature Store registration is needed when the table should be visible in the Feature Store tab on the Databricks Web UI, or when you want to enforce one or more primary keys on the table.
+
+    Args:
+        spark (SparkSession): The active Spark session.
+        fully_qualified_path (str): The fully qualified name of the Delta table (e.g., "catalog.schema.table").
+        primary_keys (List[str]): The list of primary key columns for the table.
     '''
     
     try: 

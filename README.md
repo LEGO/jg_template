@@ -7,7 +7,7 @@ An MLOps template for deploying and serving machine learning models on Databrick
 
 ## Overview
 
-The template uses a simple sandbox data set to show how one can build and deploy a machine learning model into NEXUS. Using sandbox data that is accessible through the AI Enablement catalog we can ensure that the template works off the shelve with little changes needed to make the CI/CD part run for any product team. 
+The template uses a simple sandbox data set to show how one can build and deploy a machine learning model into NEXUS. Using sandbox data that is accessible through the AI Enablement catalog we can ensure that the template works off the shelf with little changes needed to make the CI/CD part run for any product team. 
 
 ### Default workflows
 
@@ -17,7 +17,7 @@ The orchestration in this template is set up with three workflows. The chosen se
 2. **Hyperparameter tuning** - A simple hyperparameter tuning example with RAY
 3. **Model training** and **inference** - A simple example of model that trains and serves (batch and on an endpoint). 
 
-The repo follows best practices and recommendations from [MLOps maturity framework](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/) and it will point to each component in the **Maturity Level Framekwork** and explain how each script comply with the levels. 
+The repo follows best practices and recommendations from [MLOps maturity framework](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/) and it points to each component in the **Maturity Level Framekwork** and explain how each script comply with the levels. 
 
 Orchestration for your project might look different. We advice to follow the principles of the [AI Handbook](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs) when rewriting the template to fit your data product. 
 
@@ -83,7 +83,7 @@ The repository works off the shelve. However, to fit to your data product one mu
 - [serving](./src/mlops_pipeline/model/serve.py) (modify or delete)
 - [bundle variables](databricks.yml) (specific workflow variables found in `resources/*` folder)
 
-Any Machine Learning pipelines need a data preparation, training and prediction scripts to work. This template covers both real-time serving and batch prediction. Also one can make use of the hyperparameter tuning if needed. 
+Any Machine Learning pipeline needs data preparation, training and prediction scripts to work. This template covers both real-time serving and batch prediction. Also, one can make use of the hyperparameter tuning if needed. 
 
 ### Prerequisites
 
