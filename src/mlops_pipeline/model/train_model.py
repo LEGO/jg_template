@@ -31,7 +31,7 @@ The script reads preprocessed data from the feature store, trains an AdaBoostReg
 
 
 def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
-    '''
+    """
     Fetches the best hyperparameters from the most recent tuning run in the given MLflow experiment.
 
     Tuning runs are identified by the presence of params prefixed with "best_" (as logged by
@@ -45,7 +45,7 @@ def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
 
     Raises:
         ValueError: If no tuning runs with "best_" params are found in the experiment.
-    '''
+    """
     client = mlflow.MlflowClient()
 
     experiment = client.get_experiment_by_name(experiment_path)
@@ -73,42 +73,25 @@ def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
             logger.info(f"Loaded best hyperparameters from run {run.info.run_id}: {cleaned_params}")
             return cleaned_params
 
-    raise ValueError(
-        f"No tuning runs with 'best_' parameters found in experiment: {experiment_path}"
-    )
+    raise ValueError(f"No tuning runs with 'best_' parameters found in experiment: {experiment_path}")
 
 
-def train_model(
-    dataframe: DataFrame,
-    fully_qualified_model_name: str,
-    experiment_path: str,
-    model_alias: str = "champion",
-    hyperparameter_experiment_path: str | None = None,
-) -> None:
-    '''
-    Trains an AdaBoost model using the provided DataFrame and logs the model and metrics to MLflow.
-
-    Args:
-        dataframe (DataFrame): The input DataFrame containing features and target.
-        fully_qualified_model_name (str): The fully qualified name of the model to be registered.
-        experiment_path (str): The path of the MLflow experiment.
-        model_alias (str, optional): The alias to assign to the trained model. Defaults to "champion".
-        hyperparameter_experiment_path (str | None, optional): If provided, the MLflow experiment path to fetch the best hyperparameters from. Defaults to None.
-    '''
+def setup_parameters(hyperparameter_experiment_path: str | None, ada_params: dict) -> AdaBoostRegressor:
     cfg = load_model_config(config_path=config_path)
 
     if hyperparameter_experiment_path:
-        try: 
+        try:
             ada_params = _load_model_config_from_hyperparameter_tuning(hyperparameter_experiment_path)
         except Exception as e:
             logger.warning(f"Failed to load hyperparameters from tuning experiment, falling back to defaults. Error: {e}")
-            ada_params:dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
-    else: 
-        ada_params:dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
-    column_params:dict = OmegaConf.to_container(cfg.columns, resolve=True)
+            ada_params: dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
+    else:
+        ada_params: dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
+    column_params: dict = OmegaConf.to_container(cfg.columns, resolve=True)
     
-    start_mlflow_experiment_and_run(experiment_path)
+    return column_params, ada_params
 
+def prepare_data(dataframe: DataFrame, column_params: dict) -> tuple:
     logger.info("Preparing data for training")
     pdf = dataframe.toPandas()
 
@@ -124,8 +107,34 @@ def train_model(
 
     mlflow.log_input(train_dataset, context="training")
     mlflow.log_input(test_dataset, context="test")
+    
+    return X_train, X_test, y_train, y_test
 
+def train_model(
+    dataframe: DataFrame,
+    fully_qualified_model_name: str,
+    experiment_path: str,
+    model_alias: str = "champion",
+    hyperparameter_experiment_path: str | None = None,
+) -> None:
+    """
+    Trains an AdaBoost model using the provided DataFrame and logs the model and metrics to MLflow.
+
+    Args:
+        dataframe (DataFrame): The input DataFrame containing features and target.
+        fully_qualified_model_name (str): The fully qualified name of the model to be registered.
+        experiment_path (str): The path of the MLflow experiment.
+        model_alias (str, optional): The alias to assign to the trained model. Defaults to "champion".
+        hyperparameter_experiment_path (str | None, optional): If provided, the MLflow experiment path to fetch the best hyperparameters from. Defaults to None.
+    """
+    
+    start_mlflow_experiment_and_run(experiment_path)
+    
+    column_params, ada_params = setup_parameters(hyperparameter_experiment_path, ada_params={})
     model = AdaBoostRegressor(**ada_params)
+    
+    X_train, X_test, y_train, y_test = prepare_data(dataframe, column_params)
+
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
@@ -146,8 +155,9 @@ def train_model(
     )
 
     set_champion_alias_on_logged_model(fully_qualified_model_name, model_alias=model_alias)
-    
+
     mlflow.end_run()
+
 
 def _parse_args() -> argparse.Namespace:
     """Parses and returns CLI arguments for the ingestion pipeline.
@@ -217,6 +227,7 @@ def main():
         model_alias=args.model_alias,
         hyperparameter_experiment_path=args.hyperparameter_experiment_path,
     )
+
 
 if __name__ == "__main__":
     main()

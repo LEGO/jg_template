@@ -3,7 +3,7 @@
 resources:
   jobs:
     model_hyperparameter_tuning_job:
-      name: model_hyperparameter_tuning_job
+      name: ${var.model_name}_hyperparameter_tuning_job
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON#1"
