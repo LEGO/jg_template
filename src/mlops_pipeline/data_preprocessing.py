@@ -14,12 +14,16 @@ from common.utils import get_logger
 
 logger = get_logger()
 
-'''Data preprocessing script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/1-mlops-data-preparation/#data-preparation and level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/8-mlops-feature-store/#feature-store.
+'''
+The data preprocessing script is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/1-mlops-data-preparation/#data-preparation 
+The data preprocessing script is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/8-mlops-feature-store/#feature-store.
+The data preprocessing script is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/10-mlops-data-monitoring/.
 
 Explanation: 
 DP1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_genre_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
 DP2) Features are stored in a feature store, making them readily available for training and inference.
 FS1) The feature store is updated with live features as the model demands, ensuring that the most up-to-date features are available for training and inference.
+DM1) Basic data monitoring is implemented by logging the number of rows preprocessed to MLflow. This allows for tracking changes in the data volume over time, which can be an indicator of data quality issues or changes in the underlying data distribution. However, a production implementation should include much more comprehensive data monitoring, e.g. including monitoring of feature drift, data quality etc.
 '''
 
 
@@ -116,6 +120,7 @@ def main() -> None:
     logger.info("Data preprocessing complete. Writing preprocessed data to feature store.")
     
     mlflow.log_input(from_spark(dataframe), context="preprocessed_data")
+    mlflow.log_metric("num_rows_preprocessed", dataframe.count()) #NOTE this is a naive implementation of data monitoring and should be much more comprehensive in a production scenario, e.g. including monitoring of feature drift, data quality etc.
 
     fully_qualified_feature_table_name = f"{args.catalog_name}.{args.schema_name}.{args.feature_store_table_name}"
     logger.info(f"Upserting feature table: {fully_qualified_feature_table_name}")

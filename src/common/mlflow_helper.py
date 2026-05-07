@@ -7,6 +7,19 @@ from common.utils import get_logger
 
 logger = get_logger()
 
+''' 
+Model Evaluation is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/3-mlops-model-evaluation/#model-evaluation. 
+Model Monitoring is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/5-mlops-model-monitoring/#model-monitoring. 
+
+Explanation: 
+ME1) Model evaluation is closely connected with logging experiments and metrics properly. Having logged metrics we are set up for creating a sophisticated model promotion strategy that allows us to evaluate new runs against old deployments automatically using the mlflow api. 
+However, in this example we use the newest data to train on but ensure best performance at all times by continously creating a model hyperparameter tuning that feeds parameters to the main training job. 
+Model Evaluation depends on the use case, e.g. for time-series problems it is adviced to always use the most recent data but tune input hyperparameters to ensure best performance, for other use cases you might want to evaluate on a fixed test set and compare the performance of the new model to the current champion model. This should be reflected in the model promotion strategy, i.e. champion labeling of new models. 
+
+MM1) Statistics about the model which will go into calculating the model performance should automatically be captured via mlflow metric logging. 
+What statistics to log is highly depending on the use case and model choice.  
+'''
+
 
 def _ensure_experiment_directory_exists(experiment_path: str) -> None:
     """Creates parent directories for the experiment path if they don't exist.

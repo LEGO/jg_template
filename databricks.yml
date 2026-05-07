@@ -1,3 +1,9 @@
+# The automation bundle is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/6-mlops-continuous-delivery/#continuous-delivery.
+# 
+# Explanation:
+# CD1) The bundle orchestrates  all the necessary components for a complete ML pipeline in the right order with workflows.
+# CD2) Deployment with a CI/CD tool deploys source code to cloud infrastructure easily ensuring symmetry between environments.
+
 bundle:
   name: mlops_pipeline
 

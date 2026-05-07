@@ -17,17 +17,20 @@ logger = get_logger()
 
 config_path = Path(__file__).parent / "model_config.yml"
 
-'''Model training script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/2-mlops-model-training/#model-training.
-
-Model training is registered as an experiment using a machine learning framework with run parameters, model hyperparameters, and reference to the input data. Continuous Training (CT) is implemented, ensuring that the model is retrained based on a schedule, trigger, or other event. The feature store is utilized to provide updated features, ensuring that the model training always uses the latest data.
+'''
+Model training script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/2-mlops-model-training/#model-training.
+Model registration is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/7-mlops-model-registry/#model-registry.
 
 Explanation: 
-MT1) The model training script is designed to be modular and reusable, with clear separation of concerns. 
-MT2) The script uses a configuration file (model_config.yml) to manage model parameters and training settings, allowing for easy adjustments without modifying the code.
-MT3) The script 
-
-The script reads preprocessed data from the feature store, trains an AdaBoostRegressor model, and logs the model and relevant metrics to MLflow. The use of a configuration file allows for easy adjustment of model parameters and training settings without modifying the code. Continuous Training can be achieved by scheduling this script to run at regular intervals or in response to specific events, ensuring that the model remains up-to-date with the latest data and features from the feature store.
+MT1) The model training script is designed to be modular and reusable, with clear separation of concerns. Allowing Continuous Training is achieved by scheduling this script to run at regular intervals or in response to specific events, ensuring that the model remains up-to-date with the latest data and features from the feature store.
+MT2) The script uses a configuration file (model_config.yml) to manage model parameters and training settings, allowing for easy adjustments without modifying the code. However changes are still anchored in version control.
+MT3) The script registers metrics, hyperparameters and data artifacts to an experiment allowing easy tracking and comparison of different training runs.
+MT4) This also allows for easy retrieval of the best hyperparameters from tuning experiments, enabling seamless integration between hyperparameter tuning and model training.
+MT5) The script reads preprocessed data from the feature store, ensuring that the model training always uses the latest data and features.
+MR1) The model registry is used to govern the launching process of models by reviewing, approving, releasing and rolling back deployments. This is controlled via aliases. 
 '''
+
+
 
 
 def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
