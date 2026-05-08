@@ -23,14 +23,14 @@ The template sets up a mocked ML pipeline using sandbox data on Databricks that 
 Four sequential stages:
 
 ### 1. Data Preprocessing
-- **Entry:** [`data_preprocessing.py`](../src/mlops_pipeline/data_preprocessing.py)
+- **Entry:** [`data_preprocessing.py`](../src/anime_score_predictor/data_preprocessing.py)
 - **Job:** [`data_processing.yml`](../resources/data_processing.yml)
 - Reads `anime_bronze` from Unity Catalog, casts `Score` to float, one-hot encodes genres, and logs the dataset to MLflow.
 - **Output:** `anime_features` Delta table
 - **Schedule:** Weekly, Mondays 04:00 CET
 
 ### 2. Model Training
-- **Entry:** [`train_model.py`](../src/mlops_pipeline/model/train_model.py)
+- **Entry:** [`train_model.py`](../src/anime_score_predictor/model/train_model.py)
 - **Job:** [`model_training.yml`](../resources/model_training.yml)
 - Trains a Lasso regression model on genre features to predict anime scores. Logs parameters, metrics, and the model artifact to MLflow. Registers the model and sets the `champion` alias.
 - **Cluster:** CPU (i3.2xlarge, Runtime 17.3.x ML CPU)
@@ -38,13 +38,13 @@ Four sequential stages:
 - **Output:** Registered model in MLflow Registry with `champion` alias
 
 ### 3. Model Serving
-- **Entry:** [`serve.py`](../src/mlops_pipeline/model/serve.py)
+- **Entry:** [`serve.py`](../src/anime_score_predictor/model/serve.py)
 - **Job:** [`model_training.yml`](../resources/model_training.yml) (`serve_model` task, depends on `train_model`)
 - Deploys the champion model to a Databricks serving endpoint. Configures access permissions and workload size.
 - **Compute:** CPU-optimized serving endpoint
 
 ### 4. Batch Prediction
-- **Entry:** [`batch_prediction.py`](../src/mlops_pipeline/batch_prediction.py)
+- **Entry:** [`batch_prediction.py`](../src/anime_score_predictor/batch_prediction.py)
 - **Job:** [`model_training.yml`](../resources/model_training.yml) (`batch_inference_task`, depends on `train_model`)
 - Loads the `champion` model from the MLflow Registry, runs predictions on a random subset of the feature table, and upserts results into the predictions Delta table.
 - **Output:** `anime_score_predictor_batch_predictions` Delta table
@@ -106,7 +106,7 @@ Predicted_Score: float
 - **Algorithm:** Lasso (L1-regularized linear regression) via scikit-learn
 - **Target:** `Score` (anime rating, float)
 - **Features:** One-hot encoded genre columns (all columns except `Name` and `Score`)
-- **Config:** [`model_config.yml`](../src/mlops_pipeline/model/model_config.yml)
+- **Config:** [`model_config.yml`](../src/anime_score_predictor/model/model_config.yml)
   ```yaml
   lasso:
     alpha: 1.0
@@ -181,18 +181,18 @@ Training → Log model → Register → Set alias ("champion")
 
 ## Technology Stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Platform** | Databricks |
-| **Compute** | Apache Spark |
-| **Storage** | Unity Catalog (Delta Lake) |
-| **ML Framework** | scikit-learn (Lasso) |
-| **Model Serving** | Databricks Model Serving |
-| **ML Tracking** | MLflow |
-| **Config** | OmegaConf (YAML) |
-| **IaC** | Databricks Bundles (YAML) |
-| **Package Manager** | uv |
-| **CI/CD** | GitHub Actions |
+| Component           | Technology                 |
+| ------------------- | -------------------------- |
+| **Platform**        | Databricks                 |
+| **Compute**         | Apache Spark               |
+| **Storage**         | Unity Catalog (Delta Lake) |
+| **ML Framework**    | scikit-learn (Lasso)       |
+| **Model Serving**   | Databricks Model Serving   |
+| **ML Tracking**     | MLflow                     |
+| **Config**          | OmegaConf (YAML)           |
+| **IaC**             | Databricks Bundles (YAML)  |
+| **Package Manager** | uv                         |
+| **CI/CD**           | GitHub Actions             |
 
 ### Python Dependencies
 

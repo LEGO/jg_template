@@ -36,7 +36,7 @@ This is a brief outline of the most important files in the project.
 │   │   ├── mlflow_helper.py         # Helper functions for tracking & registering models
 │   │   ├── spark_helper.py          # Spark session and Delta table helpers
 │   │   └── utils.py                 # General utility functions and logging
-│   └── mlops_pipeline/              # Python scripts run as wheels for different pipeline steps
+│   └── anime_score_predictor/       # Python scripts run as wheels for different pipeline steps
 │       ├── batch_prediction.py      # Entry point for batch inference
 │       ├── data_preprocessing.py    # Entry point for data preprocessing
 │       └── model/
@@ -76,11 +76,11 @@ For detailed deployment architecture, see [docs/architecture.md](docs/architectu
 ## Getting started 
 
 The repository works off the shelve. However, to fit to your data product one must change standard scripts and redefine artifacts in the automation bundle (DAB)
-- [data preparation](./src/mlops_pipeline/data_preprocessing.py) (modify)
-- [training](./src/mlops_pipeline/model/train_model.py) (modify)
-- [hyperparameter tuning](./src/mlops_pipeline/model/tune_model_ray.py) (modify or delete)
-- [batch prediction](./src/mlops_pipeline/batch_prediction.py) (modify or delete)
-- [serving](./src/mlops_pipeline/model/serve.py) (modify or delete)
+- [data preparation](./src/anime_score_predictor/data_preprocessing.py) (modify)
+- [training](./src/anime_score_predictor/model/train_model.py) (modify)
+- [hyperparameter tuning](./src/anime_score_predictor/model/tune_model_ray.py) (modify or delete)
+- [batch prediction](./src/anime_score_predictor/batch_prediction.py) (modify or delete)
+- [serving](./src/anime_score_predictor/model/serve.py) (modify or delete)
 - [bundle variables](databricks.yml) (specific workflow variables found in `resources/*` folder)
 
 Any Machine Learning pipeline needs data preparation, training and prediction scripts to work. This template covers both real-time serving and batch prediction. Also, one can make use of the hyperparameter tuning if needed. 
