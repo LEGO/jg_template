@@ -24,7 +24,7 @@ class RunStatusValues(str, Enum):
 logger = get_logger()
 
 '''
-Model serving(MS) script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/4-mlops-model-serving/#model-serving. 
+Model serving script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/4-mlops-model-serving/#model-serving. 
 
 Explanation: 
 Model Serving 1) Making predictions available for serving is automatic and new versions of a model are automatically made available for serving by using the model registry with a "champion" alias. 
