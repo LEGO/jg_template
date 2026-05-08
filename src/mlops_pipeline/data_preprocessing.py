@@ -54,6 +54,19 @@ def create_genre_onehot_encodings(dataframe: DataFrame) -> Tuple[DataFrame, List
 
     return dataframe, clean_genres
 
+
+def alter_table_with_comments(spark, fully_qualified_feature_table_name, genres) -> None:
+    
+    logger.info("Applying column comments to feature table.")
+    spark.sql(
+        f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN Name COMMENT 'Anime name, used as the primary key.'"
+    )
+    spark.sql(f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN Score COMMENT 'Anime review score.'")
+    for genre in genres:
+        spark.sql(
+            f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN `{genre}` COMMENT 'One-hot encoded value for genre: {genre}.'"
+        )
+
 def _parse_args() -> argparse.Namespace:
     """Parses and returns CLI arguments for the ingestion pipeline.
 
@@ -132,6 +145,8 @@ def main() -> None:
     Adding it to the code is optional and can be done with common.spark_helper.register_delta_table_in_feature_store. 
     '''
      
+    alter_table_with_comments(spark, fully_qualified_feature_table_name, genres)
+
     mlflow.end_run()
 
 if __name__ == "__main__":
