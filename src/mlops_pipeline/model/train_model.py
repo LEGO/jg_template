@@ -18,8 +18,8 @@ logger = get_logger()
 config_path = Path(__file__).parent / "model_config.yml"
 
 '''
-Model training(MT) script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/2-mlops-model-training/#model-training.
-Model registration(MR) is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/7-mlops-model-registry/#model-registry.
+Model training script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/2-mlops-model-training/#model-training.
+Model registration is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/7-mlops-model-registry/#model-registry.
 
 Explanation: 
 Model Training 1) The model training script is designed to be modular and reusable, with clear separation of concerns. Allowing Continuous Training is achieved by scheduling this script to run at regular intervals or in response to specific events, ensuring that the model remains up-to-date with the latest data and features from the feature store.
