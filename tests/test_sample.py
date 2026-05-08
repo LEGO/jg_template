@@ -3,6 +3,16 @@ from pathlib import Path
 
 from common.utils import get_logger, load_model_config
 
+'''
+The test suite is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/9-mlops-continuous-integration/#continuous-integration. 
+
+Explanation: 
+Continuous Integration 1) Unit tests are designed to test individual components of the code in isolation, ensuring that each function or class behaves as expected. 
+Continuous Integration 2) Integration test is effectively done on the NEXUS dev environment. Also in the deployment pipeline we validate the bundle. 
+
+Caveat: this test suite is very narrow by design as it serves as an example. For business critical pipelines, you would want to expand this test suite to cover more edge cases and potential failure points.
+Furthermore proper integration tests are missing in this version. 
+'''
 
 def test_get_logger_returns_logger_instance():
     logger = get_logger()

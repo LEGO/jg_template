@@ -7,20 +7,19 @@ An MLOps template for deploying and serving machine learning models on Databrick
 
 ## Overview
 
-
-
+The template uses a simple sandbox data set to show how one can build and deploy a machine learning model into NEXUS. Using sandbox data that is accessible through the AI Enablement catalog we can ensure that the template works off the shelf with little changes needed to make the CI/CD part run for any product team. 
 
 ### Default workflows
 
-The orchestration in this template is set up with three workflows
+The orchestration in this template is set up with three workflows. The chosen separation allows different scheduling and ensures that each part of the pipeline is decoupled. 
 
-1. **Preprocessing/Feature engineering** - A simple preprocessing example
+1. **Preprocessing/Feature engineering** - A simple preprocessing example 
 2. **Hyperparameter tuning** - A simple hyperparameter tuning example with RAY
 3. **Model training** and **inference** - A simple example of model that trains and serves (batch and on an endpoint). 
 
-This is a working example with a sandbox dataset that follows best practices and recommendations from [MLOps maturity framework](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/). 
+The repo follows best practices and recommendations from [MLOps maturity framework](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/) and it points to each component in the **Maturity Level Framekwork** and explain how each script comply with the levels. 
 
-Orchestration for your project might look different. We advice to follow the principles of the [AI Handbook](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs).
+Orchestration for your project might look different. We advice to follow the principles of the [AI Handbook](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs) when rewriting the template to fit your data product. 
 
 ## Project structure
 
@@ -31,6 +30,7 @@ This is a brief outline of the most important files in the project.
 ├── resources/
 │   ├── data_ingestion.yml           # Databricks bundle job for data ingestion
 │   ├── model_training.yml           # Databricks bundle job for model training
+│   ├── model_tuning.yml             # Databricks bundle job for model tuning
 ├── src/
 │   ├── common/                      # Shared utilities used across pipeline steps
 │   │   ├── mlflow_helper.py         # Helper functions for tracking & registering models
@@ -39,17 +39,17 @@ This is a brief outline of the most important files in the project.
 │   └── mlops_pipeline/              # Python scripts run as wheels for different pipeline steps
 │       ├── batch_prediction.py      # Entry point for batch inference
 │       ├── data_preprocessing.py    # Entry point for data preprocessing
-│       ├── hyperparameter_tuning.py # Entry point for hyperparameter-tuning
 │       └── model/
 │           ├── model_config.yml     # Model configurations
 │           ├── serve.py             # Entry point for endpoint / model serving tests
-│           └── train_model.py       # Entry point for model training
+│           ├── train_model.py       # Entry point for model training
+│           └── tune_model_ray.py    # Entry point for model tuning
 ├── tests/
 │   └── test_sample.py               # Sample unit tests
 ├── docs/
 │   ├── architecture.md              # System architecture and component details
 │   ├── data-flow.md                 # Data flow diagrams and pipeline visualizations
-│   └── developer-guide.md          # Code examples, debugging tips, and recipes
+│   └── developer-guide.md           # Code examples, debugging tips, and recipes
 ├── databricks.yml                   # Databricks bundle definition (jobs, clusters, permissions)
 ├── pyproject.toml                   # Python package + uv configuration
 └── README.md                        # Docs
@@ -73,22 +73,47 @@ For detailed technical documentation, see:
 
 For detailed deployment architecture, see [docs/architecture.md](docs/architecture.md).
 
-## Local development
+## Getting started 
 
-### Clone the repository
+The repository works off the shelve. However, to fit to your data product one must change standard scripts and redefine artifacts in the automation bundle (DAB)
+- [data preparation](./src/mlops_pipeline/data_preprocessing.py) (modify)
+- [training](./src/mlops_pipeline/model/train_model.py) (modify)
+- [hyperparameter tuning](./src/mlops_pipeline/model/tune_model_ray.py) (modify or delete)
+- [batch prediction](./src/mlops_pipeline/batch_prediction.py) (modify or delete)
+- [serving](./src/mlops_pipeline/model/serve.py) (modify or delete)
+- [bundle variables](databricks.yml) (specific workflow variables found in `resources/*` folder)
+
+Any Machine Learning pipeline needs data preparation, training and prediction scripts to work. This template covers both real-time serving and batch prediction. Also, one can make use of the hyperparameter tuning if needed. 
+
+### Prerequisites
+
+**Local** 
+- Python (version as specified in `pyproject.toml`)
+- [uv](https://docs.astral.sh/uv/) installed
+- [Databricks CLI v0.205+](https://docs.databricks.com/en/dev-tools/cli/index.html) configured (`databricks configure` or OAuth)
+
+**CI/CD**
+- Data product ([register here](https://baseplate.legogroup.io/catalog/default/tool/onex))
+    - Databricks catalog on NEXUS
+    - Github project 
+    and environments dev, qa and prod with service principal 
+    - Service Principal IDs set as environment secrets in github (dev, qa & prod)
+
+### Deployment
+
+The deployment is symmetrical on each environment and is tied to your branches. The default triggers are
+- `dev/**` branches deploys to the `dev` environment. 
+- pull requests deploys to `qa` envrionment. 
+- `release/*` branches deploys to `prod` environment. 
+
+### Local development
 
 ```bash
 git clone https://github.com/LEGO/mlops_template.git
 cd mlops_template
 ```
 
-### Prerequisites
-
-- Python (version as specified in `pyproject.toml`)
-- [uv](https://docs.astral.sh/uv/) installed
-- [Databricks CLI v0.205+](https://docs.databricks.com/en/dev-tools/cli/index.html) configured (`databricks configure` or OAuth)
-
-### Install dependencies
+### Install dependencies locally
 
 From the repository root:
 

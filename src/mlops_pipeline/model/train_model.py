@@ -17,6 +17,21 @@ logger = get_logger()
 
 config_path = Path(__file__).parent / "model_config.yml"
 
+'''
+Model training script compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/2-mlops-model-training/#model-training.
+Model registration is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/7-mlops-model-registry/#model-registry.
+
+Explanation: 
+Model Training 1) The model training script is designed to be modular and reusable, with clear separation of concerns. Allowing Continuous Training is achieved by scheduling this script to run at regular intervals or in response to specific events, ensuring that the model remains up-to-date with the latest data and features from the feature store.
+Model Training 2) The script uses a configuration file (model_config.yml) to manage model parameters and training settings, allowing for easy adjustments without modifying the code. However changes are still anchored in version control.
+Model Training 3) The script registers metrics, hyperparameters and data artifacts to an experiment allowing easy tracking and comparison of different training runs.
+Model Training 4) This also allows for easy retrieval of the best hyperparameters from tuning experiments, enabling seamless integration between hyperparameter tuning and model training.
+Model Training 5) The script reads preprocessed data from the feature store, ensuring that the model training always uses the latest data and features.
+Model Registry 1) The model registry is used to govern the launching process of models by reviewing, approving, releasing and rolling back deployments. This is controlled via aliases. 
+'''
+
+
+
 
 def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
     """
