@@ -15,7 +15,8 @@ The orchestration in this template is set up with three workflows. The chosen se
 
 1. **Preprocessing/Feature engineering** - A simple preprocessing example 
 2. **Hyperparameter tuning** - A simple hyperparameter tuning example with RAY
-3. **Model training** and **inference** - A simple example of model that trains and serves (batch and on an endpoint). 
+3. **Model training** - One version that trains the model on a single cluster and a Ray version which distributes the training.
+4. **inference** - Both batch and live inference examples
 
 The repo follows best practices and recommendations from [MLOps maturity framework](https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/) and it points to each component in the **Maturity Level Framekwork** and explain how each script comply with the levels. 
 
@@ -29,12 +30,14 @@ This is a brief outline of the most important files in the project.
 .
 ├── resources/
 │   ├── data_ingestion.yml           # Databricks bundle job for data ingestion
+│   ├── model_training_ray.yml       # Databricks bundle job for model training
 │   ├── model_training.yml           # Databricks bundle job for model training
 │   ├── model_tuning.yml             # Databricks bundle job for model tuning
 ├── src/
 │   ├── common/                      # Shared utilities used across pipeline steps
 │   │   ├── mlflow_helper.py         # Helper functions for tracking & registering models
 │   │   ├── spark_helper.py          # Spark session and Delta table helpers
+│   │   ├── ray_helper.py            # Spark session and Delta table helpers
 │   │   └── utils.py                 # General utility functions and logging
 │   └── anime_score_predictor/       # Python scripts run as wheels for different pipeline steps
 │       ├── batch_prediction.py      # Entry point for batch inference
@@ -42,6 +45,7 @@ This is a brief outline of the most important files in the project.
 │       └── model/
 │           ├── model_config.yml     # Model configurations
 │           ├── serve.py             # Entry point for endpoint / model serving tests
+│           ├── train_model_ray.py   # Entry point for model training using ray
 │           ├── train_model.py       # Entry point for model training
 │           └── tune_model_ray.py    # Entry point for model tuning
 ├── tests/
@@ -175,3 +179,4 @@ A minimal workflow that uses this composite action was shown in `.github/workflo
 - **Data flow diagrams**: See [docs/data-flow.md](docs/data-flow.md)
 - **Databricks documentation**: [https://docs.databricks.com](https://docs.databricks.com)
 - **MLflow documentation**: [https://mlflow.org/docs](https://mlflow.org/docs)
+- **Ray Documentation**: [https://docs.ray.io/en/latest/index.html#](https://docs.ray.io/en/latest/index.html#)

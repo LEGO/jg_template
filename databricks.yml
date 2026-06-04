@@ -12,6 +12,7 @@ include:
 
 artifacts:
   default:
+    dynamic_version: true 
     type: whl
     build: uv build
     path: .

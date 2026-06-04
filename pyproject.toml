@@ -29,6 +29,7 @@ test = [
 [project.scripts]
 data_processing_job = "anime_score_predictor.data_preprocessing:main"
 model_training_job = "anime_score_predictor.model.train_model:main"
+model_training_ray_job = "anime_score_predictor.model.train_model_ray:main"
 model_tuning_job = "anime_score_predictor.model.tune_model:main"
 model_tuning_ray_job = "anime_score_predictor.model.tune_model_ray:main"
 model_serving_job = "anime_score_predictor.model.serve:main"
