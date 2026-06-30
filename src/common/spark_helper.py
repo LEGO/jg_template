@@ -1,14 +1,12 @@
 from pyspark.sql import DataFrame, SparkSession
 from delta.tables import DeltaTable
-from databricks.feature_store import FeatureStoreClient
+from databricks.feature_engineering import FeatureEngineeringClient
 
 from typing import List
 
 from common.utils import get_logger
 
 logger = get_logger()
-
-fs = FeatureStoreClient()
 
 def get_spark_session(name: str) -> SparkSession:
     """Gets the active Spark session or creates a new one if none exists.
@@ -51,34 +49,47 @@ def upsert_delta_table(spark: SparkSession, dataframe: DataFrame, fully_qualifie
          .whenNotMatchedInsertAll() \
          .execute()
 
-def register_delta_table_in_feature_store(spark: SparkSession,
-                                          fully_qualified_path: str, 
-                                          primary_keys: List[str]
-                                          ) -> None:
-    '''Registers a Delta table in the Databricks Feature Store with specified primary keys.
+def register_delta_table_in_feature_store(
+    spark: SparkSession,
+    fully_qualified_path: str,
+    primary_keys: List[str],
+    description: str | None = None,
+    tags: dict[str, str] | None = None,
+) -> None:
+    """Register a Unity Catalog Delta table as a feature table.
 
-    Usage: Feature Store registration is needed when the table should be visible in the Feature Store tab on the Databricks Web UI, or when you want to enforce one or more primary keys on the table.
+    In Unity Catalog, a Delta table with PRIMARY KEY constraints in the right
+    location is already a feature table. ``fe.create_table`` attaches the
+    description/tags metadata and exposes the table in the Databricks Features UI.
 
     Args:
-        spark (SparkSession): The active Spark session.
-        fully_qualified_path (str): The fully qualified name of the Delta table (e.g., "catalog.schema.table").
-        primary_keys (List[str]): The list of primary key columns for the table.
-    '''
-    
-    try: 
-        fs.get_table(name = fully_qualified_path)
+        spark: Active Spark session.
+        fully_qualified_path: Fully qualified UC name, e.g. ``catalog.schema.table``.
+            The table must already exist as a UC Delta table (typically written by
+            ``upsert_delta_table``).
+        primary_keys: Columns to mark ``NOT NULL`` and constrain as the primary key.
+        description: Optional human-readable description shown in the Features UI.
+        tags: Optional governance/lineage tags attached to the feature table.
+    """
+    fe = FeatureEngineeringClient()
+
+    try:
+        fe.get_table(name=fully_qualified_path)
         logger.info(f"Artifact already registered in feature store ({fully_qualified_path})!")
-        
-    except: 
-        table_name = fully_qualified_path.split(".")[-1]
+        return
+    except ValueError:
+        pass
 
-        for primary_key in primary_keys: 
-            
-            spark.sql(f"ALTER TABLE {fully_qualified_path} ALTER COLUMN {primary_key} SET NOT NULL")
+    table_name = fully_qualified_path.split(".")[-1]
+    for primary_key in primary_keys:
+        spark.sql(f"ALTER TABLE {fully_qualified_path} ALTER COLUMN {primary_key} SET NOT NULL")
+        spark.sql(f"ALTER TABLE {fully_qualified_path} ADD CONSTRAINT {table_name}_pk PRIMARY KEY({primary_key})")
 
-            spark.sql(f"ALTER TABLE {fully_qualified_path} ADD CONSTRAINT {table_name}_pk PRIMARY KEY({primary_key})")
-        
-        fs.register_table(delta_table=fully_qualified_path,
-                          primary_keys=primary_keys,
-                          description="Anime scoring features. This contains anime Name, genre and score.")  
-        logger.info(f"Artifact registered in feature store ({fully_qualified_path})!")
+    fe.create_table(
+        name=fully_qualified_path,
+        primary_keys=primary_keys,
+        source=fully_qualified_path,
+        description=description,
+        tags=tags,
+    )
+    logger.info(f"Artifact registered in feature store ({fully_qualified_path})!")
