@@ -10,3 +10,4 @@ scratch/**
 .pytest_cache/
 .DS_Store
 .vscode/settings.json
+docs/superpowers/

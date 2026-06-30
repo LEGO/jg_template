@@ -7,7 +7,7 @@ authors = [
 ]
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "databricks-feature-store[dev]>=0.17.0",
+    "databricks-feature-engineering>=0.13.0",
     "omegaconf>=2.3.0",
 ]
 
@@ -21,6 +21,10 @@ dev = [
     "mlflow>=3.8.1",
     "scikit-learn>=1.7.2",
     "ray[tune]>=2.40.0",
+    # databricks-feature-engineering imports pkg_resources at module load,
+    # which was removed in setuptools 81. Drop this pin once upstream stops
+    # importing pkg_resources.
+    "setuptools<81",
 ]
 test = [
     "pytest>=9.0.3",
