@@ -686,6 +686,19 @@ wheels = [
 ]
 
 [[package]]
+name = "delta-spark"
+version = "4.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-metadata" },
+    { name = "pyspark" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/d3/025b96dfd93c23778b492130fbb24bcfb2331d7215b6b4a766f09a0cd6d0/delta_spark-4.3.0.tar.gz", hash = "sha256:c63c21453fe3aaab4fb5c4288962d75fb056d0efdbbea0458745173faace3e40", size = 45910, upload-time = "2026-06-18T03:52:01.988Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/38/9fbc9ff5edc18e913f2ebfe5dee713eb3f8e46004f52f4c815903dc7b114/delta_spark-4.3.0-py3-none-any.whl", hash = "sha256:820693964e54b2f8a8b7a57b99ab36b805655d829e88c3a2a072e67db7100897", size = 53930, upload-time = "2026-06-18T03:52:00.699Z" },
+]
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1722,7 +1735,10 @@ dev = [
     { name = "setuptools" },
 ]
 test = [
+    { name = "delta-spark" },
+    { name = "pyspark" },
     { name = "pytest" },
+    { name = "setuptools" },
 ]
 
 [package.metadata]
@@ -1730,12 +1746,15 @@ requires-dist = [
     { name = "databricks-connect", marker = "extra == 'dev'", specifier = ">=15.4,<15.5" },
     { name = "databricks-dlt", marker = "extra == 'dev'" },
     { name = "databricks-feature-engineering", specifier = ">=0.13.0" },
+    { name = "delta-spark", marker = "extra == 'test'", specifier = ">=3.0" },
     { name = "mlflow", marker = "extra == 'dev'", specifier = ">=3.8.1" },
     { name = "omegaconf", specifier = ">=2.3.0" },
+    { name = "pyspark", marker = "extra == 'test'", specifier = ">=3.5" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "ray", extras = ["tune"], marker = "extra == 'dev'", specifier = ">=2.40.0" },
     { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.7.2" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = "<81" },
+    { name = "setuptools", marker = "extra == 'test'", specifier = "<81" },
 ]
 provides-extras = ["dev", "test"]
 
@@ -2380,6 +2399,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
 ]
+
+[[package]]
+name = "pyspark"
+version = "4.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "py4j" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/19/bf/58ee13add151469c25825b7125bbf62c3bdcec05eec4d458fcb5c5516066/pyspark-4.1.1.tar.gz", hash = "sha256:77f78984aa84fbe865c717dd37b49913b4e5c97d76ef6824f932f1aefa6621ec", size = 455359625, upload-time = "2026-01-09T09:38:38.28Z" }
 
 [[package]]
 name = "pytest"

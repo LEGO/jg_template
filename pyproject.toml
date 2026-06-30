@@ -28,6 +28,11 @@ dev = [
 ]
 test = [
     "pytest>=9.0.3",
+    "pyspark>=3.5",
+    "delta-spark>=3.0",
+    # See note above on the dev extra: required for
+    # databricks-feature-engineering to import.
+    "setuptools<81",
 ]
 
 [project.scripts]

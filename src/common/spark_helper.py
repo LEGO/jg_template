@@ -1,6 +1,5 @@
 from pyspark.sql import DataFrame, SparkSession
 from delta.tables import DeltaTable
-from databricks.feature_engineering import FeatureEngineeringClient
 
 from typing import List
 
@@ -71,6 +70,8 @@ def register_delta_table_in_feature_store(
         description: Optional human-readable description shown in the Features UI.
         tags: Optional governance/lineage tags attached to the feature table.
     """
+    from databricks.feature_engineering import FeatureEngineeringClient
+
     fe = FeatureEngineeringClient()
 
     try:
