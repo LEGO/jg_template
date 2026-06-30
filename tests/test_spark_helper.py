@@ -3,10 +3,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def test_module_imports_without_instantiating_client():
+def test_no_client_instantiation_during_module_import():
     """Importing common.spark_helper must not construct a FeatureEngineeringClient
     at module load time — otherwise importing this module outside a Databricks
-    runtime crashes the process.
+    runtime crashes the process. Also guards against re-introducing a module-level
+    `fe = FeatureEngineeringClient()` binding.
     """
     with patch("databricks.feature_engineering.FeatureEngineeringClient") as ctor:
         import importlib
@@ -15,6 +16,8 @@ def test_module_imports_without_instantiating_client():
 
         importlib.reload(sh)
         ctor.assert_not_called()
+        assert not hasattr(sh, "fe")
+        assert not hasattr(sh, "fs")
 
 
 def test_register_short_circuits_when_table_already_registered():
@@ -54,10 +57,11 @@ def test_register_creates_table_when_get_table_raises_value_error():
             tags={"team": "ml"},
         )
 
-    # Two ALTER TABLE statements per primary key: NOT NULL, then ADD CONSTRAINT.
     sql_calls = [call.args[0] for call in fake_spark.sql.call_args_list]
-    assert any("ALTER COLUMN id SET NOT NULL" in s for s in sql_calls)
-    assert any("ADD CONSTRAINT tbl_pk PRIMARY KEY(id)" in s for s in sql_calls)
+    assert sql_calls == [
+        "ALTER TABLE cat.sch.tbl ALTER COLUMN id SET NOT NULL",
+        "ALTER TABLE cat.sch.tbl ADD CONSTRAINT tbl_pk PRIMARY KEY(id)",
+    ]
 
     fake_fe.create_table.assert_called_once_with(
         name="cat.sch.tbl",
@@ -65,6 +69,39 @@ def test_register_creates_table_when_get_table_raises_value_error():
         source="cat.sch.tbl",
         description="desc",
         tags={"team": "ml"},
+    )
+
+
+def test_register_uses_single_constraint_for_composite_primary_keys():
+    """Composite PKs must produce ONE ADD CONSTRAINT statement listing all
+    columns, not one per column (which would collide on the constraint name).
+    """
+    import common.spark_helper as sh
+
+    fake_fe = MagicMock()
+    fake_fe.get_table.side_effect = ValueError("not found")
+    fake_spark = MagicMock()
+
+    with patch.object(sh, "FeatureEngineeringClient", return_value=fake_fe):
+        sh.register_delta_table_in_feature_store(
+            spark=fake_spark,
+            fully_qualified_path="cat.sch.tbl",
+            primary_keys=["a", "b"],
+        )
+
+    sql_calls = [call.args[0] for call in fake_spark.sql.call_args_list]
+    assert sql_calls == [
+        "ALTER TABLE cat.sch.tbl ALTER COLUMN a SET NOT NULL",
+        "ALTER TABLE cat.sch.tbl ALTER COLUMN b SET NOT NULL",
+        "ALTER TABLE cat.sch.tbl ADD CONSTRAINT tbl_pk PRIMARY KEY(a, b)",
+    ]
+
+    fake_fe.create_table.assert_called_once_with(
+        name="cat.sch.tbl",
+        primary_keys=["a", "b"],
+        source="cat.sch.tbl",
+        description=None,
+        tags=None,
     )
 
 

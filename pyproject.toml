@@ -21,6 +21,9 @@ dev = [
     "mlflow>=3.8.1",
     "scikit-learn>=1.7.2",
     "ray[tune]>=2.40.0",
+    # databricks-feature-engineering imports pkg_resources at module load,
+    # which was removed in setuptools 81. Drop this pin once upstream stops
+    # importing pkg_resources.
     "setuptools<81",
 ]
 test = [

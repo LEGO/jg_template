@@ -83,7 +83,8 @@ def register_delta_table_in_feature_store(
     table_name = fully_qualified_path.split(".")[-1]
     for primary_key in primary_keys:
         spark.sql(f"ALTER TABLE {fully_qualified_path} ALTER COLUMN {primary_key} SET NOT NULL")
-        spark.sql(f"ALTER TABLE {fully_qualified_path} ADD CONSTRAINT {table_name}_pk PRIMARY KEY({primary_key})")
+    pk_columns = ", ".join(primary_keys)
+    spark.sql(f"ALTER TABLE {fully_qualified_path} ADD CONSTRAINT {table_name}_pk PRIMARY KEY({pk_columns})")
 
     fe.create_table(
         name=fully_qualified_path,
