@@ -644,18 +644,6 @@ wheels = [
 ]
 
 [[package]]
-name = "databricks-feature-store"
-version = "0.17.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "databricks-feature-engineering" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/79/3890a1cd91ac4fcad2f3a627948cc1ca809eaee7634d1e51d97041afa4a1/databricks-feature-store-0.17.0.tar.gz", hash = "sha256:fa71ac06d7b752041cf398734f6003355c78c123664824f44a1e3e31c01ff7ce", size = 3119, upload-time = "2024-01-09T18:28:15.848Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/03/cd/6489847c6c032111e63f9fca0e4b30327d9dcb93331c3d69d93b1ff3fde8/databricks_feature_store-0.17.0-py3-none-any.whl", hash = "sha256:dcb8cb0a911e61bcd556943ff5ba99c6b94ee8917d1a0828d9668be35684d453", size = 4220, upload-time = "2024-01-09T18:28:14.136Z" },
-]
-
-[[package]]
 name = "databricks-sdk"
 version = "0.105.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1719,7 +1707,7 @@ name = "mlops-pipeline"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "databricks-feature-store" },
+    { name = "databricks-feature-engineering" },
     { name = "omegaconf" },
 ]
 
@@ -1740,7 +1728,7 @@ test = [
 requires-dist = [
     { name = "databricks-connect", marker = "extra == 'dev'", specifier = ">=15.4,<15.5" },
     { name = "databricks-dlt", marker = "extra == 'dev'" },
-    { name = "databricks-feature-store", extras = ["dev"], specifier = ">=0.17.0" },
+    { name = "databricks-feature-engineering", specifier = ">=0.13.0" },
     { name = "mlflow", marker = "extra == 'dev'", specifier = ">=3.8.1" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
