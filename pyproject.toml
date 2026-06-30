@@ -21,6 +21,7 @@ dev = [
     "mlflow>=3.8.1",
     "scikit-learn>=1.7.2",
     "ray[tune]>=2.40.0",
+    "setuptools<81",
 ]
 test = [
     "pytest>=9.0.3",
