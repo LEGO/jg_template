@@ -3,7 +3,7 @@
 resources:
   jobs:
     model_training_ray_job:
-      name: ${var.model_name}_ray_training_job
+      name: ${var.anime_score_predictor_model_name}_ray_training_job
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON"
@@ -22,9 +22,9 @@ resources:
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
               schema: ${var.schema}
-              model_name: ${var.model_name}_ray
-              feature_store_table_name: ${var.feature_store_table_name}
-              experiment_path: ${var.experiment_path}_model_training_ray
+              model_name: ${var.anime_score_predictor_model_name}_ray
+              feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
+              experiment_path: ${var.anime_score_predictor_experiment_path}_model_training_ray
               target_col: Score
               id_col: Name
               num_workers: "2"
@@ -41,13 +41,13 @@ resources:
               epochs: "30"
               learning_rate: "0.001"
               global_batch_size: "256"
-              ray_storage_path: /dbfs/tmp/ray_results/${var.model_name}
-              ray_log_path: /dbfs/tmp/raylogs/${var.model_name}_ray_cluster
+              ray_storage_path: /dbfs/tmp/ray_results/${var.anime_score_predictor_model_name}
+              ray_log_path: /dbfs/tmp/raylogs/${var.anime_score_predictor_model_name}_ray_cluster
               test_size: "0.2"
               random_seed: "42"
           job_cluster_key: ray_gpu_cluster
           libraries:
-            - whl: ../dist/*.whl
+            - whl: ../../dist/*.whl
 
       job_clusters:
         - job_cluster_key: ray_gpu_cluster
@@ -70,6 +70,21 @@ resources:
             autoscale:
               min_workers: 2
               max_workers: 2
+            custom_tags:
+              SOURCE: "table"
+
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 17.3.x-cpu-ml-scala2.13
+            node_type_id: i3.2xlarge
+            policy_id: ${var.policy_id}
+            data_security_mode: SINGLE_USER
+            aws_attributes:
+              first_on_demand: 1
+              zone_id: "auto"
+            autoscale:
+              min_workers: 1
+              max_workers: 1
             custom_tags:
               SOURCE: "table"
 
