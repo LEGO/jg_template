@@ -5,6 +5,7 @@ import argparse
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import (
+    AutoCaptureConfigInput,
     EndpointCoreConfigInput,
     ServedEntityInput,
     ServedModelInputWorkloadType,
@@ -114,6 +115,8 @@ def create_or_update_endpoint(
     endpoint_name: str,
     full_model_name: str,
     model_version: str,
+    catalog: str,
+    schema: str,
     workload_size: str = "Small",
     scale_to_zero: bool = True,
 ) -> None:
@@ -124,6 +127,8 @@ def create_or_update_endpoint(
         endpoint_name (str): Name of the serving endpoint.
         full_model_name (str): Full Unity Catalog model name.
         model_version (str): Model version to deploy.
+        catalog (str): Unity Catalog name.
+        schema (str): Unity Catalog schema name.
         workload_size (str): Size of the serving workload (default: "Small").
         scale_to_zero (bool): Whether to scale to zero when idle (default: True).
     """
@@ -144,6 +149,12 @@ def create_or_update_endpoint(
         workspace_client.serving_endpoints.update_config_and_wait(
             name=endpoint_name,
             served_entities=[served_entity],
+            auto_capture_config=AutoCaptureConfigInput(
+                                    catalog_name=catalog,
+                                    schema_name=schema,
+                                    table_name_prefix=endpoint_name,   # -> <prefix>_payload
+                                    enabled=True,
+                                ),
         )
         logger.info(f"Endpoint '{endpoint_name}' updated successfully.")
 
@@ -156,6 +167,12 @@ def create_or_update_endpoint(
                 config=EndpointCoreConfigInput(
                     name=endpoint_name,
                     served_entities=[served_entity],
+                    auto_capture_config=AutoCaptureConfigInput(
+                        catalog_name=catalog,
+                        schema_name=schema,
+                        table_name_prefix=endpoint_name,   # -> <prefix>_payload
+                        enabled=True,
+                    ),
                 ),
             )
             logger.info(f"Endpoint '{endpoint_name}' created successfully.")
@@ -215,26 +232,28 @@ def main() -> None:
     try:
         # Get model version from alias
         model_version = get_model_version(
-            workspace_client,
-            full_model_name,
-            args.model_alias,
+            workspace_client = workspace_client,
+            full_model_name=full_model_name,
+            alias=args.model_alias,
         )
 
         # Create or update the endpoint
         create_or_update_endpoint(
-            workspace_client,
-            args.serving_endpoint_name,
-            full_model_name,
-            model_version,
-            args.workload_size,
-            args.scale_to_zero,
+            workspace_client = workspace_client,
+            endpoint_name = args.serving_endpoint_name,
+            full_model_name=full_model_name,
+            model_version=model_version,
+            catalog=args.catalog,
+            schema=args.schema,
+            workload_size=args.workload_size,
+            scale_to_zero=args.scale_to_zero,
         )
 
         # Set permissions
         set_endpoint_permissions(
-            workspace_client,
-            args.serving_endpoint_name,
-            args.permission_group,
+            workspace_client = workspace_client,
+            endpoint_name = args.serving_endpoint_name,
+            permission_group = args.permission_group,
         )
 
         # Log endpoint URL

@@ -1,0 +1,23 @@
+# Unity Catalog governance for the MLOps pipeline.
+
+resources:
+  schemas:
+    mlops_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+      comment: "MLOps pipeline: features, models, batch predictions, and serving inference payload tables."
+      grants:
+        - principal: ${var.permission_group}
+          privileges:
+            - USE_SCHEMA
+            - SELECT
+            - CREATE_TABLE
+            - MODIFY
+            - MANAGE
+
+        - principal: ${workspace.current_user.userName}
+          privileges:
+            - USE_SCHEMA
+            - SELECT
+            - CREATE_TABLE
+            - MODIFY
