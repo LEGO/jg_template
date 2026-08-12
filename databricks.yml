@@ -8,7 +8,7 @@ bundle:
   name: mlops_pipeline
 
 include:
-  - resources/*
+  - resources/**/*.yml
 
 artifacts:
   default:
@@ -26,18 +26,18 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   schema:
     description: The schema to use
     default: general_resources
-  feature_store_table_name:
+  anime_score_predictor_feature_store_table_name:
     description: The name of the feature store table
     default: anime_features
-  batch_prediction_table:
+  anime_score_predictor_batch_prediction_table:
     description: The name of the batch prediction table
-    default: ${var.model_name}_batch_predictions
-  model_name:
+    default: ${var.anime_score_predictor_model_name}_batch_predictions
+  anime_score_predictor_model_name:
     description: The name of the feature model
     default: anime_score_predictor
-  experiment_path:
+  anime_score_predictor_experiment_path:
     description: The path to the mlflow experiment
-    default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.model_name}
+    default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.anime_score_predictor_model_name}
   pause_status:
     description: The default pause status for jobs
   policy_id:
@@ -53,6 +53,23 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: c1.app.access.sscdp.aiops_dev.developer
 
 targets:
+  # local: local development via Databricks CLI / VSCode extension. Per-user prefix isolates assets.
+  local:
+    mode: development
+    default: true
+    presets:
+      name_prefix: '[${workspace.current_user.short_name}] '
+    workspace:
+      host: https://lego-ssc-dev.cloud.databricks.com
+    variables:
+      environment: dev
+      pause_status: PAUSED
+      policy_id: A963D86B02001DC8
+      databricks_host: https://lego-ssc-dev.cloud.databricks.com
+      secret_scope: ${var.catalog}.dev.sp.secret_scope
+      anime_score_predictor_experiment_path: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.short_name}/${var.anime_score_predictor_model_name}
+
+  # dev/qa/prod: deployed only through GitHub Actions (service principal).
   dev:
     mode: development
     workspace:

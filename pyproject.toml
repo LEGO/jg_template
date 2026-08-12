@@ -28,6 +28,8 @@ dev = [
 ]
 test = [
     "pytest>=9.0.3",
+    "pyspark>=3.5,<3.6",
+    "delta-spark>=3.0,<4.0",
 ]
 
 [project.scripts]

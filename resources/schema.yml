@@ -1,0 +1,9 @@
+# Output schema, created by `bundle deploy` so it exists before any job runs.
+# Jobs read/write ${var.schema} in ${var.catalog}.
+
+resources:
+  schemas:
+    output_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+      comment: "mlops_pipeline output schema (${var.environment})"
