@@ -21,7 +21,7 @@ resources:
             entry_point: model_tuning_ray_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
-              schema: ${var.schema}
+              schema: ${resources.schemas.output_schema.name}
               model_name: ${var.anime_score_predictor_model_name}_hyperparameter_tuning
               feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
               experiment_path: ${var.anime_score_predictor_experiment_path}_hyperparameter_tuning

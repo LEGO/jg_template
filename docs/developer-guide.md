@@ -143,7 +143,7 @@ for v in versions:
 from common.mlflow_helper import start_mlflow_experiment_and_run
 
 run = start_mlflow_experiment_and_run(
-    experiment_path="/Shared/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"
+    experiment_path="/ai_agency/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"
 )
 ```
 
@@ -258,7 +258,7 @@ databricks bundle run data_preprocessing_job --target dev --profile lego-ssc-dev
 import mlflow
 
 runs = mlflow.search_runs(
-    experiment_names=["/Shared/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"],
+    experiment_names=["/ai_agency/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"],
     order_by=["start_time DESC"],
     max_results=5,
 )

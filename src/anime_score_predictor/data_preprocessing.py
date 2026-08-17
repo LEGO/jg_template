@@ -84,12 +84,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--schema_name",
         required=True,
-        help="Schema (database) name where the training table will be written.",
+        help="Schema (database) name where the feature table will be written.",
     )
     parser.add_argument(
-        "--table_name",
+        "--source_table",
         required=True,
-        help="Name of the Delta table containing the training data.",
+        help="Fully-qualified source table to read, e.g. 'catalog.schema.table'. "
+        "Decoupled from the write schema: the source may be another team's "
+        "schema, another catalog, etc. — not necessarily where features are written.",
     )
     parser.add_argument(
         "--feature_store_table_name",
@@ -119,7 +121,7 @@ def main() -> None:
     logger.info("Initializing Spark session.")
     spark = get_spark_session(Path(__file__).stem)
 
-    fully_qualified_data_table_path = f"{args.catalog_name}.{args.schema_name}.{args.table_name}"
+    fully_qualified_data_table_path = args.source_table
     logger.info(f"Reading data from {fully_qualified_data_table_path}")
     dataframe = spark.table(fully_qualified_data_table_path)
     mlflow.log_param("data_source_table", fully_qualified_data_table_path)
