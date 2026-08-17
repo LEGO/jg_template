@@ -5,7 +5,7 @@ import argparse
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import (
-    AutoCaptureConfigInput,
+    AiGatewayInferenceTableConfig,
     EndpointCoreConfigInput,
     ServedEntityInput,
     ServedModelInputWorkloadType,
@@ -140,21 +140,24 @@ def create_or_update_endpoint(
         scale_to_zero_enabled=scale_to_zero,
     )
 
+    # AI Gateway inference table config. Legacy auto_capture_config is deprecated;
+    # AI Gateway is now the supported path and still produces <prefix>_payload.
+    inference_table_config = AiGatewayInferenceTableConfig(
+        catalog_name=catalog,
+        schema_name=schema,
+        table_name_prefix=endpoint_name,   # -> <prefix>_payload
+        enabled=True,
+    )
+
     try:
         # Check if endpoint exists
-        existing_endpoint = workspace_client.serving_endpoints.get(name=endpoint_name)
+        workspace_client.serving_endpoints.get(name=endpoint_name)
         logger.info(f"Endpoint '{endpoint_name}' exists. Updating configuration...")
 
         # Update the endpoint configuration
         workspace_client.serving_endpoints.update_config_and_wait(
             name=endpoint_name,
             served_entities=[served_entity],
-            auto_capture_config=AutoCaptureConfigInput(
-                                    catalog_name=catalog,
-                                    schema_name=schema,
-                                    table_name_prefix=endpoint_name,   # -> <prefix>_payload
-                                    enabled=True,
-                                ),
         )
         logger.info(f"Endpoint '{endpoint_name}' updated successfully.")
 
@@ -167,18 +170,20 @@ def create_or_update_endpoint(
                 config=EndpointCoreConfigInput(
                     name=endpoint_name,
                     served_entities=[served_entity],
-                    auto_capture_config=AutoCaptureConfigInput(
-                        catalog_name=catalog,
-                        schema_name=schema,
-                        table_name_prefix=endpoint_name,   # -> <prefix>_payload
-                        enabled=True,
-                    ),
                 ),
             )
             logger.info(f"Endpoint '{endpoint_name}' created successfully.")
         else:
             logger.error(f"Error managing endpoint: {e}")
             raise
+
+    # Configure the AI Gateway inference table (create or update; idempotent).
+    logger.info(f"Configuring AI Gateway inference table for '{endpoint_name}'...")
+    workspace_client.serving_endpoints.put_ai_gateway(
+        name=endpoint_name,
+        inference_table_config=inference_table_config,
+    )
+    logger.info(f"AI Gateway inference table configured for '{endpoint_name}'.")
 
 
 def set_endpoint_permissions(
