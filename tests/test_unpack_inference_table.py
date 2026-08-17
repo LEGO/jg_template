@@ -71,3 +71,23 @@ def test_unpack_empty_input_returns_empty_with_schema(spark):
     out = unpack_payload(df)
     assert out.count() == 0
     assert set(out.columns) == {"record_id", "prediction_ts", "Predicted_Score", "model_version"}
+
+
+def test_empty_unpacked_table_returns_zero_rows_with_correct_schema(spark):
+    """empty_unpacked_table() must produce 0 rows and the 4 correct typed columns.
+
+    This covers the fix for the first-run / no-traffic failure: when the
+    _payload source is absent or empty, main() calls this helper to write a
+    typed empty target table so the downstream setup_monitor task has a target.
+    """
+    from anime_score_predictor.monitoring.unpack_inference_table import empty_unpacked_table
+
+    out = empty_unpacked_table(spark)
+
+    assert out.count() == 0
+    assert set(out.columns) == {"record_id", "prediction_ts", "Predicted_Score", "model_version"}
+    dtypes = dict(out.dtypes)
+    assert dtypes["record_id"] == "string"
+    assert dtypes["prediction_ts"] == "timestamp"
+    assert dtypes["Predicted_Score"] == "double"
+    assert dtypes["model_version"] == "string"

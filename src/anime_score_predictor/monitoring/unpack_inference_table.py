@@ -1,8 +1,8 @@
 import argparse
 
 import pyspark.sql.functions as F
-from pyspark.sql import DataFrame
-from pyspark.sql.types import ArrayType, DoubleType, StructField, StructType
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.types import ArrayType, DoubleType, StringType, LongType, StructField, StructType
 
 from common.spark_helper import get_spark_session, upsert_delta_table
 from common.utils import get_logger
@@ -12,6 +12,14 @@ logger = get_logger()
 # Schema of the `response` JSON blob captured by AutoCaptureConfigInput.
 # The served model returns {"predictions": [<double>, ...]}.
 _RESPONSE_SCHEMA = StructType([StructField("predictions", ArrayType(DoubleType()), True)])
+
+# Schema of the `_payload` source table written by Databricks model serving.
+_PAYLOAD_SCHEMA = StructType([
+    StructField("databricks_request_id", StringType(), True),
+    StructField("timestamp_ms", LongType(), True),
+    StructField("request", StringType(), True),
+    StructField("response", StringType(), True),
+])
 
 
 def unpack_payload(df: DataFrame) -> DataFrame:
@@ -38,6 +46,25 @@ def unpack_payload(df: DataFrame) -> DataFrame:
         F.col("Predicted_Score").cast("double").alias("Predicted_Score"),
         F.lit("unknown").alias("model_version"),
     )
+
+
+def empty_unpacked_table(spark: SparkSession) -> DataFrame:
+    """Return an empty DataFrame with the correct unpacked-predictions schema.
+
+    Produces the same schema as ``unpack_payload`` by passing an empty
+    ``_payload``-shaped DataFrame through the transform.  Use this to
+    pre-create the target table when no source data is available yet, so
+    downstream tasks (e.g. ``setup_monitor``) always have a table to attach to.
+
+    Args:
+        spark: Active Spark session.
+
+    Returns:
+        Empty DataFrame with columns ``record_id``, ``prediction_ts``,
+        ``Predicted_Score``, and ``model_version``.
+    """
+    empty_source = spark.createDataFrame([], _PAYLOAD_SCHEMA)
+    return unpack_payload(empty_source)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -67,11 +94,17 @@ def main() -> None:
 
     if not spark.catalog.tableExists(source):
         logger.info(f"Source table {source} does not exist yet (no traffic). Nothing to unpack.")
+        logger.info(f"Creating empty target table {target} so downstream monitor setup has a target.")
+        unpacked = empty_unpacked_table(spark)
+        upsert_delta_table(spark, unpacked, target, primary_key="record_id")
         return
 
     df = spark.read.table(source)
     if df.limit(1).count() == 0:
         logger.info(f"Source table {source} is empty. Nothing to unpack.")
+        logger.info(f"Creating empty target table {target} so downstream monitor setup has a target.")
+        unpacked = empty_unpacked_table(spark)
+        upsert_delta_table(spark, unpacked, target, primary_key="record_id")
         return
 
     unpacked = unpack_payload(df)
