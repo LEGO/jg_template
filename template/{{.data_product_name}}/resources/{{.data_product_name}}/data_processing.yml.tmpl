@@ -3,7 +3,7 @@
 resources:
   jobs:
     data_preprocessing_job:
-      name: ${var.anime_score_predictor_model_name}_data_preprocessing_job
+      name: ${var.{{.data_product_name}}_model_name}_data_preprocessing_job
 
       schedule:
         quartz_cron_expression: "0 0 4 ? * MON"
@@ -17,19 +17,39 @@ resources:
       tasks:
         - task_key: data_processing
           python_wheel_task:
-            package_name: mlops_pipeline
+            package_name: {{.data_product_name}}
             entry_point: data_processing_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog_name: ${var.catalog}
-              schema_name: ${var.schema}
-              table_name: anime_bronze
-              feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
-              experiment_path: ${var.anime_score_predictor_experiment_path}_data_preprocessing
-              
+              schema_name: ${resources.schemas.output_schema.name}
+              source_table: ${var.{{.data_product_name}}_source_table}
+              feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              experiment_path: ${var.{{.data_product_name}}_experiment_path}_data_preprocessing
+
           job_cluster_key: job_cluster
           libraries:
             - whl: ../../dist/*.whl
-       
+{{- if eq .include_data_monitoring "yes" }}
+
+        # Data monitoring runs downstream of preprocessing in the same DAG, attaching a
+        # Lakehouse monitor to the feature table just produced by the data_processing task.
+        - task_key: data_monitoring
+          python_wheel_task:
+            package_name: {{.data_product_name}}
+            entry_point: data_drift_report_job
+            named_parameters:
+              catalog_name: ${var.catalog}
+              schema_name: ${resources.schemas.output_schema.name}
+              table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              output_schema_name: ${var.catalog}.${resources.schemas.output_schema.name}
+              assets_dir: ${var.data_monitoring_assets_dir}
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../../dist/*.whl
+          depends_on:
+            - task_key: data_processing
+{{- end }}
+
       job_clusters:
         - job_cluster_key: job_cluster
           new_cluster:
@@ -53,5 +73,5 @@ resources:
               SOURCE: "table"
 
       permissions:
-        - group_name: c1.app.access.sscdp.ai_agency.developer
+        - group_name: ${var.permission_group}
           level: CAN_MANAGE_RUN

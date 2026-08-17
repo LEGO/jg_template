@@ -1,0 +1,81 @@
+![Databricks](https://img.shields.io/badge/Databricks-D14836?style=for-the-badge&logo=databricks&logoColor=white)
+![Python](https://img.shields.io/badge/PYTHON-3776AB?style=for-the-badge&logo=python&logoColor=ffdd54)
+
+# {{.data_product_name}}
+
+An MLOps project on Databricks, scaffolded from the LEGO MLOps template. It ships a working
+example (an anime-score predictor over sandbox data in the `{{.data_product_name}}` catalog) so the
+CI/CD wiring runs off the shelf — edit the example scripts to fit your own data product.
+
+## Components included
+
+This project was generated with:
+
+- **Data preparation** — `src/{{.data_product_name}}/data_preprocessing.py`
+- **Model training** — `src/{{.data_product_name}}/model/train_model.py`
+- **Model evaluation + registry** — RMSE logging + champion-alias promotion (`src/common/mlflow_helper.py`)
+- **Continuous integration** — `tests/` + `.github/workflows/unit_test.yml`
+- **Continuous delivery** — `databricks.yml` targets + `.github/`
+{{- if eq .include_ray "yes" }}
+- **Ray distributed training** — `src/{{.data_product_name}}/model/train_model_ray.py` (GPU job)
+{{- end }}
+{{- if eq .include_hyperparameter_tuning "yes" }}
+- **Hyperparameter tuning** — `src/{{.data_product_name}}/model/tune_model_ray.py` (Ray Tune + Optuna)
+{{- end }}
+{{- if eq .include_serving "yes" }}
+- **Model serving** — `src/{{.data_product_name}}/model/serve.py` (real-time endpoint)
+{{- end }}
+{{- if eq .include_batch_prediction "yes" }}
+- **Batch prediction** — `src/{{.data_product_name}}/batch_prediction.py`
+{{- end }}
+{{- if eq .include_data_monitoring "yes" }}
+- **Data monitoring** — `src/data_monitoring/data_drift_report.py` (Lakehouse quality monitor)
+{{- end }}
+
+## Adapt to your data product
+
+The example carries anime-specific logic (target column `Score`, id `Name`, genre one-hot). Edit:
+
+- `src/{{.data_product_name}}/data_preprocessing.py` — read your source table, build your features
+- `src/{{.data_product_name}}/model/train_model.py` + `model/model_config.yml` — your model + params
+- `databricks.yml` variables and `resources/{{.data_product_name}}/*.yml` job schedules/clusters
+
+`catalog` (defaults to `{{.data_product_name}}`) and `schema` (`{{.schema}}`) are bundle variables
+in `databricks.yml`. The raw source table defaults to the shared sandbox
+`ai_enablement.general_resources.anime_bronze` so the example runs off the shelf — point
+`{{.data_product_name}}_source_table` at your own data.
+
+## Prerequisites
+
+**Local**
+- Python (see `pyproject.toml`) and [uv](https://docs.astral.sh/uv/)
+- [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) configured with a profile
+
+**CI/CD** — a registered data product with a NEXUS catalog, GitHub project, and dev/qa/prod
+service principals set as environment secrets.
+
+## Local development
+
+```bash
+uv sync --all-extras
+uv run pytest -q
+databricks bundle validate -t local --profile <your-profile>
+```
+
+## Deploy & run
+
+```bash
+databricks bundle deploy -t local --profile <your-profile>
+databricks bundle run model_training_job -t local --profile <your-profile>
+```
+
+Deployment is symmetric across environments and tied to branches: `dev/**` → dev, pull requests
+→ qa, `release/*` → prod (see `.github/`).
+
+## Help
+
+- Databricks: https://docs.databricks.com
+- MLflow: https://mlflow.org/docs
+{{- if or (eq .include_ray "yes") (eq .include_hyperparameter_tuning "yes") }}
+- Ray: https://docs.ray.io/en/latest/
+{{- end }}

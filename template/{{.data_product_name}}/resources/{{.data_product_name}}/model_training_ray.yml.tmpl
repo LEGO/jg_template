@@ -3,7 +3,7 @@
 resources:
   jobs:
     model_training_ray_job:
-      name: ${var.anime_score_predictor_model_name}_ray_training_job
+      name: ${var.{{.data_product_name}}_model_name}_ray_training_job
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON"
@@ -17,14 +17,14 @@ resources:
       tasks:
         - task_key: train_model_ray
           python_wheel_task:
-            package_name: mlops_pipeline
+            package_name: {{.data_product_name}}
             entry_point: model_training_ray_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
-              schema: ${var.schema}
-              model_name: ${var.anime_score_predictor_model_name}_ray
-              feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
-              experiment_path: ${var.anime_score_predictor_experiment_path}_model_training_ray
+              schema: ${resources.schemas.output_schema.name}
+              model_name: ${var.{{.data_product_name}}_model_name}_ray
+              feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              experiment_path: ${var.{{.data_product_name}}_experiment_path}_model_training_ray
               target_col: Score
               id_col: Name
               num_workers: "2"
@@ -41,8 +41,8 @@ resources:
               epochs: "30"
               learning_rate: "0.001"
               global_batch_size: "256"
-              ray_storage_path: /dbfs/tmp/ray_results/${var.anime_score_predictor_model_name}
-              ray_log_path: /dbfs/tmp/raylogs/${var.anime_score_predictor_model_name}_ray_cluster
+              ray_storage_path: /dbfs/tmp/ray_results/${var.{{.data_product_name}}_model_name}
+              ray_log_path: /dbfs/tmp/raylogs/${var.{{.data_product_name}}_model_name}_ray_cluster
               test_size: "0.2"
               random_seed: "42"
           job_cluster_key: ray_gpu_cluster
@@ -89,5 +89,5 @@ resources:
               SOURCE: "table"
 
       permissions:
-        - group_name: c1.app.access.sscdp.ai_agency.developer
+        - group_name: ${var.permission_group}
           level: CAN_MANAGE_RUN

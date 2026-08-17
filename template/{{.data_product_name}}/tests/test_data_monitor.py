@@ -7,7 +7,7 @@ from databricks.sdk.errors import ResourceAlreadyExists
 from data_monitoring.data_drift_report import setup_monitor
 
 
-ASSETS_DIR = "/Shared/mlops_pipeline/dev/data_monitoring"
+ASSETS_DIR = "/Shared/anime_score_predictor/dev/data_monitoring"
 
 
 def test_creates_snapshot_monitor_when_absent():

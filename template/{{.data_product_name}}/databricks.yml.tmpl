@@ -1,13 +1,33 @@
+{{- if ne .include_ray "yes" -}}
+  {{- skip (printf "src/%s/model/train_model_ray.py" .data_product_name) -}}
+  {{- skip "src/common/ray_helper.py" -}}
+  {{- skip (printf "resources/%s/model_training_ray.yml" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_hyperparameter_tuning "yes" -}}
+  {{- skip (printf "src/%s/model/tune_model_ray.py" .data_product_name) -}}
+  {{- skip (printf "resources/%s/model_tuning.yml" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_serving "yes" -}}
+  {{- skip (printf "src/%s/model/serve.py" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_batch_prediction "yes" -}}
+  {{- skip (printf "src/%s/batch_prediction.py" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_data_monitoring "yes" -}}
+  {{- skip "src/data_monitoring" -}}
+  {{- skip "tests/test_data_monitor.py" -}}
+{{- end -}}
 # The automation bundle is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/6-mlops-continuous-delivery/#continuous-delivery.
-# 
+#
 # Explanation:
 # CD1) The bundle orchestrates  all the necessary components for a complete ML pipeline in the right order with workflows.
 # CD2) Deployment with a CI/CD tool deploys source code to cloud infrastructure easily ensuring symmetry between environments.
 
 bundle:
-  name: mlops_pipeline
+  name: {{.data_product_name}}
 
 include:
+  - resources/*.yml
   - resources/**/*.yml
 
 artifacts:
@@ -21,29 +41,31 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   environment:
     description: The deployment environment
   catalog:
-    description: The catalog to use
-    default: ai_enablement
+    description: The catalog to use (defaults to the data product name)
+    default: {{.data_product_name}}
   schema:
     description: The schema to use
-    default: general_resources
-  anime_score_predictor_feature_store_table_name:
+    default: {{.schema}}
+  {{.data_product_name}}_source_table:
+    description: >-
+      Fully-qualified raw source table the preprocessing job reads. Defaults to the shared
+      sandbox table so the example runs regardless of the chosen catalog/product name.
+    default: ai_enablement.general_resources.anime_bronze
+  {{.data_product_name}}_feature_store_table_name:
     description: The name of the feature store table
     default: anime_features
-  anime_score_predictor_batch_prediction_table:
+  {{.data_product_name}}_batch_prediction_table:
     description: The name of the batch prediction table
-    default: ${var.anime_score_predictor_model_name}_batch_predictions
-  anime_score_predictor_model_name:
-    description: The name of the feature model
+    default: ${var.{{.data_product_name}}_model_name}_batch_predictions
+  {{.data_product_name}}_model_name:
+    description: The name of the registered model (example default; rename for your product)
     default: anime_score_predictor
-  anime_score_predictor_experiment_path:
+  {{.data_product_name}}_experiment_path:
     description: The path to the mlflow experiment
-    default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.anime_score_predictor_model_name}
-  data_monitoring_source_table:
-    description: The table the Lakehouse data monitor profiles (defaults to the anime feature table)
-    default: ${var.anime_score_predictor_feature_store_table_name}
+    default: /Shared/{{.data_product_name}}/${var.environment}/${workspace.current_user.userName}/${var.{{.data_product_name}}_model_name}
   data_monitoring_assets_dir:
     description: Team-shared workspace folder for the data monitor's generated assets
-    default: /Shared/mlops_pipeline/${var.environment}/data_monitoring
+    default: /Shared/{{.data_product_name}}/${var.environment}/data_monitoring
   pause_status:
     description: The default pause status for jobs
   policy_id:
@@ -73,7 +95,7 @@ targets:
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
       secret_scope: ${var.catalog}.dev.sp.secret_scope
-      anime_score_predictor_experiment_path: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.short_name}/${var.anime_score_predictor_model_name}
+      {{.data_product_name}}_experiment_path: /Shared/{{.data_product_name}}/${var.environment}/${workspace.current_user.short_name}/${var.{{.data_product_name}}_model_name}
 
   # dev/qa/prod: deployed only through GitHub Actions (service principal).
   dev:

@@ -3,7 +3,7 @@
 resources:
   jobs:
     model_training_job:
-      name: ${var.anime_score_predictor_model_name}_training_job
+      name: ${var.{{.data_product_name}}_model_name}_training_job
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON"
@@ -17,28 +17,31 @@ resources:
       tasks:        
         - task_key: train_model
           python_wheel_task:
-            package_name: mlops_pipeline
+            package_name: {{.data_product_name}}
             entry_point: model_training_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
-              schema: ${var.schema}
-              model_name: ${var.anime_score_predictor_model_name}
-              feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
-              experiment_path: ${var.anime_score_predictor_experiment_path}_model_training
-              hyperparameter_experiment_path: ${var.anime_score_predictor_experiment_path}_hyperparameter_tuning
+              schema: ${resources.schemas.output_schema.name}
+              model_name: ${var.{{.data_product_name}}_model_name}
+              feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              experiment_path: ${var.{{.data_product_name}}_experiment_path}_model_training
+{{- if eq .include_hyperparameter_tuning "yes" }}
+              hyperparameter_experiment_path: ${var.{{.data_product_name}}_experiment_path}_hyperparameter_tuning
+{{- end }}
           job_cluster_key: job_cluster
           libraries:
             - whl: ../../dist/*.whl
-        
+{{- if eq .include_serving "yes" }}
+
         - task_key: serve_model
           python_wheel_task:
-            package_name: mlops_pipeline
+            package_name: {{.data_product_name}}
             entry_point: model_serving_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
-              schema: ${var.schema}
-              model_name: ${var.anime_score_predictor_model_name}
-              serving_endpoint_name: ${var.anime_score_predictor_model_name}_endpoint
+              schema: ${resources.schemas.output_schema.name}
+              model_name: ${var.{{.data_product_name}}_model_name}
+              serving_endpoint_name: ${var.{{.data_product_name}}_model_name}_endpoint
               permission_group: ${var.permission_group}
               workload_size: Small
               scale_to_zero: "true"
@@ -47,23 +50,26 @@ resources:
             - whl: ../../dist/*.whl
           depends_on:
             - task_key: train_model
-       
+{{- end }}
+{{- if eq .include_batch_prediction "yes" }}
+
         - task_key: batch_prediction_task
           python_wheel_task:
-            package_name: mlops_pipeline
+            package_name: {{.data_product_name}}
             entry_point: batch_prediction
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog_name: ${var.catalog}
-              schema_name: ${var.schema}
-              model_name: ${var.anime_score_predictor_model_name}
-              feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
-              batch_prediction_table: ${var.anime_score_predictor_batch_prediction_table}
-              experiment_path: ${var.anime_score_predictor_experiment_path}_batch_prediction
+              schema_name: ${resources.schemas.output_schema.name}
+              model_name: ${var.{{.data_product_name}}_model_name}
+              feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              batch_prediction_table: ${var.{{.data_product_name}}_batch_prediction_table}
+              experiment_path: ${var.{{.data_product_name}}_experiment_path}_batch_prediction
           job_cluster_key: job_cluster
           libraries:
             - whl: ../../dist/*.whl
           depends_on:
             - task_key: train_model
+{{- end }}
 
       job_clusters:
         - job_cluster_key: job_cluster
@@ -82,5 +88,5 @@ resources:
               SOURCE: "table"
 
       permissions:
-        - group_name: c1.app.access.sscdp.ai_agency.developer
+        - group_name: ${var.permission_group}
           level: CAN_MANAGE_RUN

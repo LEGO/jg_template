@@ -1,0 +1,65 @@
+[project]
+name = "{{.data_product_name}}"
+version = "0.0.1"
+authors = [
+    { name = "andreas.moelgaard-andersen@LEGO.com" },
+    { name = "nikolaj.madsen@LEGO.com" }
+]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "databricks-feature-engineering>=0.13.0",
+    "omegaconf>=2.3.0",
+]
+
+[dependency-groups]
+
+
+[project.optional-dependencies]
+dev = [
+    "databricks-dlt",
+    "databricks-connect>=15.4,<15.5",
+    "mlflow>=3.8.1",
+    "scikit-learn>=1.7.2",
+{{- if or (eq .include_ray "yes") (eq .include_hyperparameter_tuning "yes") }}
+    "ray[tune]>=2.40.0",
+{{- end }}
+    # databricks-feature-engineering imports pkg_resources at module load,
+    # which was removed in setuptools 81. Drop this pin once upstream stops
+    # importing pkg_resources.
+    "setuptools<81",
+]
+test = [
+    "pytest>=9.0.3",
+    "pyspark>=3.5,<3.6",
+    "delta-spark>=3.0,<4.0",
+]
+
+[project.scripts]
+data_processing_job = "{{.data_product_name}}.data_preprocessing:main"
+model_training_job = "{{.data_product_name}}.model.train_model:main"
+{{- if eq .include_ray "yes" }}
+model_training_ray_job = "{{.data_product_name}}.model.train_model_ray:main"
+{{- end }}
+{{- if eq .include_hyperparameter_tuning "yes" }}
+model_tuning_ray_job = "{{.data_product_name}}.model.tune_model_ray:main"
+{{- end }}
+{{- if eq .include_serving "yes" }}
+model_serving_job = "{{.data_product_name}}.model.serve:main"
+{{- end }}
+{{- if eq .include_batch_prediction "yes" }}
+batch_prediction = "{{.data_product_name}}.batch_prediction:main"
+{{- end }}
+{{- if eq .include_data_monitoring "yes" }}
+data_drift_report_job = "data_monitoring.data_drift_report:main"
+{{- end }}
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{.data_product_name}}", "src/common"{{if eq .include_data_monitoring "yes"}}, "src/data_monitoring"{{end}}]
+include = ["src/{{.data_product_name}}/model/model_config.yml"]
+
+[tool.black]
+line-length = 125

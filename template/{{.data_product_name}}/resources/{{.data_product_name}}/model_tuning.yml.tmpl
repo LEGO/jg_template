@@ -1,14 +1,12 @@
-# Data-drift reporting job. Decoupled from any model, but tied to the ingestion
-# step: by default it profiles the anime feature table into a long/tidy
-# <source>_drift_stats timeseries for later dashboard charting. Reporting only.
+# Hyperparameter tuning job for MLOps pipeline.
 
 resources:
   jobs:
-    data_drift_report_job:
-      name: data_monitoring_drift_report_job
+    model_hyperparameter_tuning_job:
+      name: ${var.{{.data_product_name}}_model_name}_hyperparameter_tuning_job
 
       schedule:
-        quartz_cron_expression: "0 30 5 * * ?"
+        quartz_cron_expression: "0 0 6 ? * MON#1"
         timezone_id: Europe/Copenhagen
         pause_status: ${var.pause_status}
 
@@ -17,20 +15,20 @@ resources:
       #    - your_email@example.com
 
       tasks:
-        - task_key: data_drift_report
+        - task_key: hyperparameter_tuning
           python_wheel_task:
-            package_name: mlops_pipeline
-            entry_point: data_drift_report_job
+            package_name: {{.data_product_name}}
+            entry_point: model_tuning_ray_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
-              catalog_name: ${var.catalog}
-              schema_name: ${var.schema}
-              table_name: ${var.data_monitoring_source_table}
-              output_schema_name: ${var.catalog}.${var.schema}
-              assets_dir: ${var.data_monitoring_assets_dir}
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.output_schema.name}
+              model_name: ${var.{{.data_product_name}}_model_name}_hyperparameter_tuning
+              feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
+              experiment_path: ${var.{{.data_product_name}}_experiment_path}_hyperparameter_tuning
           job_cluster_key: job_cluster
           libraries:
             - whl: ../../dist/*.whl
-
+        
       job_clusters:
         - job_cluster_key: job_cluster
           new_cluster:
@@ -48,5 +46,5 @@ resources:
               SOURCE: "table"
 
       permissions:
-        - group_name: c1.app.access.sscdp.ai_agency.developer
+        - group_name: ${var.permission_group}
           level: CAN_MANAGE_RUN
