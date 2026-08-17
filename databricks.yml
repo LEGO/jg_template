@@ -38,6 +38,12 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   anime_score_predictor_experiment_path:
     description: The path to the mlflow experiment
     default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.anime_score_predictor_model_name}
+  data_monitoring_source_table:
+    description: The table the Lakehouse data monitor profiles (defaults to the anime feature table)
+    default: ${var.anime_score_predictor_feature_store_table_name}
+  data_monitoring_assets_dir:
+    description: Team-shared workspace folder for the data monitor's generated assets
+    default: /Shared/mlops_pipeline/${var.environment}/data_monitoring
   pause_status:
     description: The default pause status for jobs
   policy_id:

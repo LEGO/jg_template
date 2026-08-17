@@ -1,0 +1,52 @@
+# Data-drift reporting job. Decoupled from any model, but tied to the ingestion
+# step: by default it profiles the anime feature table into a long/tidy
+# <source>_drift_stats timeseries for later dashboard charting. Reporting only.
+
+resources:
+  jobs:
+    data_drift_report_job:
+      name: data_monitoring_drift_report_job
+
+      schedule:
+        quartz_cron_expression: "0 30 5 * * ?"
+        timezone_id: Europe/Copenhagen
+        pause_status: ${var.pause_status}
+
+      #email_notifications: #NOTE Uncomment and set your email to receive notifications on job failure.
+      #  on_failure:
+      #    - your_email@example.com
+
+      tasks:
+        - task_key: data_drift_report
+          python_wheel_task:
+            package_name: mlops_pipeline
+            entry_point: data_drift_report_job
+            named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
+              catalog_name: ${var.catalog}
+              schema_name: ${var.schema}
+              table_name: ${var.data_monitoring_source_table}
+              output_schema_name: ${var.catalog}.${var.schema}
+              assets_dir: ${var.data_monitoring_assets_dir}
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../../dist/*.whl
+
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 17.3.x-cpu-ml-scala2.13
+            node_type_id: i3.2xlarge
+            policy_id: ${var.policy_id}
+            data_security_mode: SINGLE_USER
+            aws_attributes:
+              first_on_demand: 1
+              zone_id: "auto"
+            autoscale:
+              min_workers: 1
+              max_workers: 1
+            custom_tags:
+              SOURCE: "table"
+
+      permissions:
+        - group_name: c1.app.access.sscdp.ai_agency.developer
+          level: CAN_MANAGE_RUN
