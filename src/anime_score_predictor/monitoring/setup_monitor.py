@@ -37,7 +37,7 @@ def create_or_update_monitor(
         assets_dir: Workspace directory for monitor assets (dashboard, etc.).
     """
     try:
-        workspace_client.quality_monitors.get(table_name)
+        workspace_client.quality_monitors.get(table_name=table_name)
         logger.info(f"Monitor for '{table_name}' exists. Updating...")
         workspace_client.quality_monitors.update(
             table_name=table_name,
