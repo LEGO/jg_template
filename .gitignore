@@ -10,4 +10,12 @@ scratch/**
 .pytest_cache/
 .DS_Store
 .vscode/settings.json
+.claude/settings.local.json
 docs/superpowers/
+dist/
+*.py[cod]
+mlruns/
+ray_results/
+.ray/
+.ruff_cache/
+.mypy_cache/
