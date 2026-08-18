@@ -52,7 +52,7 @@ Four sequential stages:
 ### 5. Prediction Drift Monitoring
 - **Entry:** [`unpack_inference_table.py`](../src/anime_score_predictor/monitoring/unpack_inference_table.py), [`setup_monitor.py`](../src/anime_score_predictor/monitoring/setup_monitor.py)
 - **Job:** [`model_monitoring.yml`](../resources/anime_score_predictor/model_monitoring.yml) (`unpack_inference_table` → `setup_monitor`)
-- Flattens the serving endpoint's `<endpoint>_payload` AI Gateway inference table into a typed `*_predictions_unpacked` Delta table (one successful row per scored record; error rows with `status_code != 200` are dropped), then creates/updates a managed Lakehouse Monitoring `InferenceLog` monitor on it. Databricks generates the profile-metrics table, drift-metrics table, and a monitoring dashboard. `model_version` is the payload table's `served_entity_id`, so drift can be sliced per served model version.
+- Flattens the serving endpoint's `<endpoint>_payload` AI Gateway inference table into a typed `*_predictions_unpacked` Delta table (one successful row per scored record; error rows with `status_code != 200` are dropped), then creates/updates a managed Lakehouse Monitoring `InferenceLog` monitor on it. Each row keeps its input feature vector (`features`, zipped positionally with the prediction) alongside `Predicted_Score`. Databricks generates the profile-metrics table, drift-metrics table, and a monitoring dashboard. `model_version` is the payload table's `served_entity_id`, so drift can be sliced per served model version.
 - **Schedule:** Daily, 07:00 CET (aligned with the `1 day` monitor granularity)
 - **Output:** `anime_score_predictor_predictions_unpacked` Delta table + managed monitor assets
 - **Scope:** Prediction drift only; input-feature drift is handled separately.
@@ -111,6 +111,7 @@ Predicted_Score: float
 record_id: string
 prediction_ts: timestamp
 Predicted_Score: double
+features: array<double>   # input feature vector (bare positional array, no genre names)
 model_version: string
 ```
 

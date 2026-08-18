@@ -21,13 +21,21 @@ logger = get_logger()
 # The served model returns {"predictions": [<double>, ...]}.
 _RESPONSE_SCHEMA = StructType([StructField("predictions", ArrayType(DoubleType()), True)])
 
+# Schema of the `request` JSON blob. The tensor-signature model is called with
+# {"inputs": [[<double>, ...], ...]} — one inner array of features per scored record,
+# positionally aligned with `response.predictions`.
+_REQUEST_SCHEMA = StructType(
+    [StructField("inputs", ArrayType(ArrayType(DoubleType())), True)]
+)
+
 # Subset of the AI Gateway `_payload` inference table columns this transform reads.
-# (The live table has more columns — request, requester, execution_duration_ms, etc. —
+# (The live table has more columns — requester, execution_duration_ms, etc. —
 # but only these drive the unpacked predictions table.)
 _PAYLOAD_SCHEMA = StructType([
     StructField("databricks_request_id", StringType(), True),
     StructField("request_time", TimestampType(), True),
     StructField("status_code", IntegerType(), True),
+    StructField("request", StringType(), True),
     StructField("response", StringType(), True),
     StructField("served_entity_id", StringType(), True),
 ])
@@ -37,33 +45,47 @@ def unpack_payload(df: DataFrame) -> DataFrame:
     """Flatten an AI Gateway inference `_payload` DataFrame into one row per prediction.
 
     Only successful (``status_code == 200``) requests are unpacked; error rows carry
-    an error blob in ``response`` rather than predictions and are dropped.
+    an error blob in ``response`` rather than predictions and are dropped. The
+    ``request.inputs`` feature vectors are zipped positionally with
+    ``response.predictions`` so each output row keeps the exact input that produced
+    its score.
 
     Args:
         df: DataFrame with columns ``databricks_request_id`` (str),
             ``request_time`` (timestamp), ``status_code`` (int),
-            ``response`` (JSON str), ``served_entity_id`` (str).
+            ``request`` (JSON str), ``response`` (JSON str), ``served_entity_id`` (str).
 
     Returns:
         DataFrame with columns ``record_id``, ``prediction_ts`` (timestamp),
-        ``Predicted_Score`` (double), ``model_version`` (str). One row per element
-        of ``response.predictions``; ``record_id`` is ``"{request_id}-{index}"``.
-        ``model_version`` is the ``served_entity_id`` (stable per served model
-        version), which the monitor slices drift by.
+        ``Predicted_Score`` (double), ``features`` (array<double> — the input
+        feature vector for this record), ``model_version`` (str). One row per
+        element of ``response.predictions``; ``record_id`` is
+        ``"{request_id}-{index}"``. ``model_version`` is the ``served_entity_id``
+        (stable per served model version), which the monitor slices drift by.
+        The endpoint's request is a bare positional array, so ``features`` carries
+        no per-genre names.
     """
-    parsed = df.filter(F.col("status_code") == 200).withColumn(
-        "_resp", F.from_json(F.col("response"), _RESPONSE_SCHEMA)
+    parsed = (
+        df.filter(F.col("status_code") == 200)
+        .withColumn("_resp", F.from_json(F.col("response"), _RESPONSE_SCHEMA))
+        .withColumn("_req", F.from_json(F.col("request"), _REQUEST_SCHEMA))
     )
-    exploded = parsed.select(
+    zipped = parsed.select(
         F.col("databricks_request_id").alias("_req_id"),
         F.col("request_time").cast("timestamp").alias("prediction_ts"),
         F.col("served_entity_id").alias("_model_version"),
-        F.posexplode(F.col("_resp.predictions")).alias("_idx", "Predicted_Score"),
+        F.posexplode(
+            F.arrays_zip(
+                F.col("_resp.predictions").alias("prediction"),
+                F.col("_req.inputs").alias("features"),
+            )
+        ).alias("_idx", "_pair"),
     )
-    return exploded.select(
+    return zipped.select(
         F.concat_ws("-", F.col("_req_id"), F.col("_idx").cast("string")).alias("record_id"),
         F.col("prediction_ts"),
-        F.col("Predicted_Score").cast("double").alias("Predicted_Score"),
+        F.col("_pair.prediction").cast("double").alias("Predicted_Score"),
+        F.col("_pair.features").alias("features"),
         F.col("_model_version").alias("model_version"),
     )
 
