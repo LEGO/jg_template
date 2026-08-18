@@ -2,49 +2,69 @@ import argparse
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.types import ArrayType, DoubleType, StringType, LongType, StructField, StructType
+from pyspark.sql.types import (
+    ArrayType,
+    DoubleType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 from common.spark_helper import get_spark_session, upsert_delta_table
 from common.utils import get_logger
 
 logger = get_logger()
 
-# Schema of the `response` JSON blob captured by AutoCaptureConfigInput.
+# Schema of the `response` JSON blob captured in the AI Gateway inference table.
 # The served model returns {"predictions": [<double>, ...]}.
 _RESPONSE_SCHEMA = StructType([StructField("predictions", ArrayType(DoubleType()), True)])
 
-# Schema of the `_payload` source table written by Databricks model serving.
+# Subset of the AI Gateway `_payload` inference table columns this transform reads.
+# (The live table has more columns — request, requester, execution_duration_ms, etc. —
+# but only these drive the unpacked predictions table.)
 _PAYLOAD_SCHEMA = StructType([
     StructField("databricks_request_id", StringType(), True),
-    StructField("timestamp_ms", LongType(), True),
-    StructField("request", StringType(), True),
+    StructField("request_time", TimestampType(), True),
+    StructField("status_code", IntegerType(), True),
     StructField("response", StringType(), True),
+    StructField("served_entity_id", StringType(), True),
 ])
 
 
 def unpack_payload(df: DataFrame) -> DataFrame:
-    """Flatten an inference `_payload` DataFrame into one typed row per prediction.
+    """Flatten an AI Gateway inference `_payload` DataFrame into one row per prediction.
+
+    Only successful (``status_code == 200``) requests are unpacked; error rows carry
+    an error blob in ``response`` rather than predictions and are dropped.
 
     Args:
         df: DataFrame with columns ``databricks_request_id`` (str),
-            ``timestamp_ms`` (long), ``request`` (JSON str), ``response`` (JSON str).
+            ``request_time`` (timestamp), ``status_code`` (int),
+            ``response`` (JSON str), ``served_entity_id`` (str).
 
     Returns:
         DataFrame with columns ``record_id``, ``prediction_ts`` (timestamp),
         ``Predicted_Score`` (double), ``model_version`` (str). One row per element
         of ``response.predictions``; ``record_id`` is ``"{request_id}-{index}"``.
+        ``model_version`` is the ``served_entity_id`` (stable per served model
+        version), which the monitor slices drift by.
     """
-    parsed = df.withColumn("_resp", F.from_json(F.col("response"), _RESPONSE_SCHEMA))
+    parsed = df.filter(F.col("status_code") == 200).withColumn(
+        "_resp", F.from_json(F.col("response"), _RESPONSE_SCHEMA)
+    )
     exploded = parsed.select(
         F.col("databricks_request_id").alias("_req_id"),
-        (F.col("timestamp_ms") / 1000).cast("timestamp").alias("prediction_ts"),
+        F.col("request_time").cast("timestamp").alias("prediction_ts"),
+        F.col("served_entity_id").alias("_model_version"),
         F.posexplode(F.col("_resp.predictions")).alias("_idx", "Predicted_Score"),
     )
     return exploded.select(
         F.concat_ws("-", F.col("_req_id"), F.col("_idx").cast("string")).alias("record_id"),
         F.col("prediction_ts"),
         F.col("Predicted_Score").cast("double").alias("Predicted_Score"),
-        F.lit("unknown").alias("model_version"),
+        F.col("_model_version").alias("model_version"),
     )
 
 

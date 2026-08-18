@@ -1,7 +1,16 @@
+import datetime
 import json
 
 import pytest
 from pyspark.sql import SparkSession
+
+_PAYLOAD_COLUMNS = [
+    "databricks_request_id",
+    "request_time",
+    "status_code",
+    "response",
+    "served_entity_id",
+]
 
 
 @pytest.fixture(scope="module")
@@ -16,24 +25,26 @@ def spark():
     session.stop()
 
 
-def _payload_row(request_id, ts_ms, features_list, predictions):
+def _payload_row(request_id, request_time, predictions, status_code=200, served_entity_id="model-1"):
     return (
         request_id,
-        ts_ms,
-        json.dumps({"dataframe_records": features_list}),
+        request_time,
+        status_code,
         json.dumps({"predictions": predictions}),
+        served_entity_id,
     )
 
 
 def test_unpack_explodes_one_row_per_prediction(spark):
     from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
 
+    ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     df = spark.createDataFrame(
         [
-            _payload_row("req-1", 1_600_000_000_000, [{"Seinen": 1}, {"Seinen": 0}], [7.5, 6.0]),
-            _payload_row("req-2", 1_600_000_100_000, [{"Seinen": 1}], [8.1]),
+            _payload_row("req-1", ts, [7.5, 6.0]),
+            _payload_row("req-2", ts, [8.1]),
         ],
-        ["databricks_request_id", "timestamp_ms", "request", "response"],
+        _PAYLOAD_COLUMNS,
     )
 
     out = unpack_payload(df)
@@ -45,12 +56,46 @@ def test_unpack_explodes_one_row_per_prediction(spark):
     assert rows["req-2-0"]["Predicted_Score"] == pytest.approx(8.1)
 
 
+def test_unpack_carries_served_entity_id_as_model_version(spark):
+    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+
+    ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
+    df = spark.createDataFrame(
+        [_payload_row("req-1", ts, [7.5], served_entity_id="entity-abc123")],
+        _PAYLOAD_COLUMNS,
+    )
+
+    out = unpack_payload(df)
+    assert out.collect()[0]["model_version"] == "entity-abc123"
+
+
+def test_unpack_drops_error_rows(spark):
+    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+
+    ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
+    ok = _payload_row("req-ok", ts, [7.5])
+    # A 400 error row carries an error blob in `response`, not predictions.
+    err = (
+        "req-err",
+        ts,
+        400,
+        json.dumps({"error_code": "BAD_REQUEST", "message": "bad shape"}),
+        "model-1",
+    )
+    df = spark.createDataFrame([ok, err], _PAYLOAD_COLUMNS)
+
+    out = unpack_payload(df)
+    rows = {r["record_id"] for r in out.collect()}
+    assert rows == {"req-ok-0"}
+
+
 def test_unpack_output_schema(spark):
     from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
 
+    ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     df = spark.createDataFrame(
-        [_payload_row("req-1", 1_600_000_000_000, [{"Seinen": 1}], [7.5])],
-        ["databricks_request_id", "timestamp_ms", "request", "response"],
+        [_payload_row("req-1", ts, [7.5])],
+        _PAYLOAD_COLUMNS,
     )
 
     out = unpack_payload(df)
@@ -65,7 +110,8 @@ def test_unpack_empty_input_returns_empty_with_schema(spark):
 
     df = spark.createDataFrame(
         [],
-        "databricks_request_id string, timestamp_ms long, request string, response string",
+        "databricks_request_id string, request_time timestamp, status_code int, "
+        "response string, served_entity_id string",
     )
 
     out = unpack_payload(df)
