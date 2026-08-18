@@ -21,8 +21,8 @@ resources:
             entry_point: data_processing_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog_name: ${var.catalog}
-              schema_name: ${var.schema}
-              table_name: anime_bronze
+              schema_name: ${resources.schemas.output_schema.name}
+              source_table: ${var.anime_score_predictor_source_table}
               feature_store_table_name: ${var.anime_score_predictor_feature_store_table_name}
               experiment_path: ${var.anime_score_predictor_experiment_path}_data_preprocessing
               
