@@ -407,7 +407,7 @@ def main():
 
         mlflow.pytorch.log_model(
             pytorch_model=model,
-            artifact_path="model",
+            name="model",
             signature=signature,
             registered_model_name=fully_qualified_model_name,
         )

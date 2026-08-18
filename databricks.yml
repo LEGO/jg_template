@@ -8,6 +8,7 @@ bundle:
   name: mlops_pipeline
 
 include:
+  - resources/*.yml
   - resources/**/*.yml
 
 artifacts:
@@ -20,12 +21,20 @@ artifacts:
 variables: #NOTE Defined at the bundle level to be shared across all jobs, and can be overridden at the target level if needed.
   environment:
     description: The deployment environment
+  team_name:
+    description: The team's top-level workspace folder. Single source of truth — set once here.
+    default: ai_agency
   catalog:
     description: The catalog to use
     default: ai_enablement
   schema:
     description: The schema to use
     default: general_resources
+  anime_score_predictor_source_table:
+    description: >-
+      Fully-qualified source table the preprocessing job reads. Decoupled from the
+      write schema — may be another team's schema, catalog, etc.
+    default: ${var.catalog}.general_resources.anime_bronze
   anime_score_predictor_feature_store_table_name:
     description: The name of the feature store table
     default: anime_features
@@ -40,7 +49,13 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: anime_score_predictor
   anime_score_predictor_experiment_path:
     description: The path to the mlflow experiment
-    default: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.anime_score_predictor_model_name}
+    default: /${var.team_name}/mlops_pipeline/${var.environment}/${workspace.current_user.userName}/${var.anime_score_predictor_model_name}
+  data_monitoring_source_table:
+    description: The table the Lakehouse data monitor profiles (defaults to the anime feature table)
+    default: ${var.anime_score_predictor_feature_store_table_name}
+  data_monitoring_assets_dir:
+    description: Team-shared workspace folder for the data monitor's generated assets
+    default: /${var.team_name}/mlops_pipeline/${var.environment}/data_monitoring
   pause_status:
     description: The default pause status for jobs
   policy_id:
@@ -70,7 +85,6 @@ targets:
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
       secret_scope: ${var.catalog}.dev.sp.secret_scope
-      anime_score_predictor_experiment_path: /Shared/mlops_pipeline/${var.environment}/${workspace.current_user.short_name}/${var.anime_score_predictor_model_name}
 
   # dev/qa/prod: deployed only through GitHub Actions (service principal).
   dev:

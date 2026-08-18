@@ -154,7 +154,7 @@ schema: general_resources
 model_name: anime_score_predictor
 feature_store_table_name: anime_features
 batch_prediction_table: anime_score_predictor_batch_predictions
-experiment_path: /Shared/mlops_pipeline/dev/<user>/<model_name>
+experiment_path: /ai_agency/mlops_pipeline/dev/<user>/<model_name>
 ```
 
 ### Cluster Configurations
