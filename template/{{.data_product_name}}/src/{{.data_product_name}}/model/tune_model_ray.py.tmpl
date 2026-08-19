@@ -133,7 +133,7 @@ def tune_model_ray(
 
     mlflow.sklearn.log_model(
         sk_model=final_model,
-        artifact_path="model",
+        name="anime_score_predictor_hyperparameter_tuning",
         signature=signature,
         registered_model_name=fully_qualified_model_name,
     )

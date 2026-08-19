@@ -84,14 +84,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--schema_name",
         required=True,
-        help="Schema (database) name where the training table will be written.",
+        help="Schema (database) name where the feature table will be written.",
     )
     parser.add_argument(
         "--source_table",
         required=True,
         help="Fully-qualified source table to read, e.g. 'catalog.schema.table'. "
-        "Decoupled from the write catalog/schema so the example works regardless of "
-        "the chosen data product name (defaults to the shared sandbox table).",
+        "Decoupled from the write catalog/schema: the source may be another team's "
+        "schema, another catalog, etc. — not necessarily where features are written.",
     )
     parser.add_argument(
         "--feature_store_table_name",

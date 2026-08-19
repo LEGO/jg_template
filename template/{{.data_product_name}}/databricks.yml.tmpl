@@ -40,6 +40,9 @@ artifacts:
 variables: #NOTE Defined at the bundle level to be shared across all jobs, and can be overridden at the target level if needed.
   environment:
     description: The deployment environment
+  team_name:
+    description: The team's top-level workspace folder. Single source of truth — set once here.
+    default: ai_agency
   catalog:
     description: The catalog to use (defaults to the data product name)
     default: {{.data_product_name}}
@@ -48,7 +51,8 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: {{.schema}}
   {{.data_product_name}}_source_table:
     description: >-
-      Fully-qualified raw source table the preprocessing job reads. Defaults to the shared
+      Fully-qualified raw source table the preprocessing job reads. Decoupled from the
+      write schema — may be another team's schema, catalog, etc. Defaults to the shared
       sandbox table so the example runs regardless of the chosen catalog/product name.
     default: ai_enablement.general_resources.anime_bronze
   {{.data_product_name}}_feature_store_table_name:
@@ -62,10 +66,10 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: anime_score_predictor
   {{.data_product_name}}_experiment_path:
     description: The path to the mlflow experiment
-    default: /Shared/{{.data_product_name}}/${var.environment}/${workspace.current_user.userName}/${var.{{.data_product_name}}_model_name}
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/${workspace.current_user.userName}/${var.{{.data_product_name}}_model_name}
   data_monitoring_assets_dir:
     description: Team-shared workspace folder for the data monitor's generated assets
-    default: /Shared/{{.data_product_name}}/${var.environment}/data_monitoring
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/data_monitoring
   pause_status:
     description: The default pause status for jobs
   policy_id:
@@ -95,7 +99,6 @@ targets:
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
       secret_scope: ${var.catalog}.dev.sp.secret_scope
-      {{.data_product_name}}_experiment_path: /Shared/{{.data_product_name}}/${var.environment}/${workspace.current_user.short_name}/${var.{{.data_product_name}}_model_name}
 
   # dev/qa/prod: deployed only through GitHub Actions (service principal).
   dev:
