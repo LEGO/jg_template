@@ -30,6 +30,16 @@ include:
   - resources/*.yml
   - resources/**/*.yml
 
+presets:
+  # Provenance tag applied to every taggable resource in the bundle (jobs, MLflow
+  # experiments). Mirrors the `source_template` tag that mlflow_helper.py puts on runs,
+  # registered models and model versions — so a whole project generated from the MLOps
+  # template is traceable end to end. Target-level presets merge with these per key, so
+  # the per-user `name_prefix` on the `local` target keeps working.
+  # NOTE Delete this block if you do not want the provenance tag; nothing else depends on it.
+  tags:
+    source_template: mlops_template
+
 artifacts:
   default:
     dynamic_version: true 

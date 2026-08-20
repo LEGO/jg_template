@@ -7,6 +7,13 @@ from common.utils import get_logger
 
 logger = get_logger()
 
+# Provenance tag applied to every MLflow run, registered model and model version
+# produced by a project generated from the MLOps template. Lets you find all
+# template-derived models with e.g.
+#   mlflow.search_model_versions("tags.source_template = 'mlops_template'")
+TEMPLATE_TAG_KEY = "source_template"
+TEMPLATE_TAG_VALUE = "mlops_template"
+
 ''' 
 Model Evaluation is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/3-mlops-model-evaluation/#model-evaluation. 
 Model Monitoring is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/5-mlops-model-monitoring/#model-monitoring. 
@@ -71,7 +78,42 @@ def start_mlflow_experiment_and_run(experiment_path: str, artifact_location: str
         mlflow.end_run()
     except Exception as e:
         logger.info(e)
-    return mlflow.start_run()
+
+    run = mlflow.start_run()
+    mlflow.set_tag(TEMPLATE_TAG_KEY, TEMPLATE_TAG_VALUE)
+    return run
+
+
+def tag_model_as_template_generated(
+    fully_qualified_model_name: str, version: str | int | None = None
+) -> None:
+    """Tags a registered model (and one of its versions) as template-generated.
+
+    Applies TEMPLATE_TAG_KEY=TEMPLATE_TAG_VALUE to the registered model and, when a
+    version is given, to that model version. Tagging failures are logged but never
+    fail the training job.
+
+    Args:
+        fully_qualified_model_name (str): Unity Catalog model name ("catalog.schema.model_name").
+        version (str | int | None): Model version to tag. If None, only the registered model is tagged.
+    """
+    mlflow_client = mlflow.MlflowClient()
+
+    try:
+        mlflow_client.set_registered_model_tag(
+            name=fully_qualified_model_name,
+            key=TEMPLATE_TAG_KEY,
+            value=TEMPLATE_TAG_VALUE,
+        )
+        if version is not None:
+            mlflow_client.set_model_version_tag(
+                name=fully_qualified_model_name,
+                version=str(version),
+                key=TEMPLATE_TAG_KEY,
+                value=TEMPLATE_TAG_VALUE,
+            )
+    except Exception as e:
+        logger.warning(f"Could not set template provenance tag on {fully_qualified_model_name}: {e}")
 
 
 def set_champion_alias_on_logged_model(
@@ -97,3 +139,5 @@ def set_champion_alias_on_logged_model(
         alias=model_alias,
         version=latest_version.version,
     )
+
+    tag_model_as_template_generated(fully_qualified_model_name, version=latest_version.version)

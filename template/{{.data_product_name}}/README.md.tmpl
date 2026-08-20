@@ -14,6 +14,7 @@ This project was generated with:
 - **Data preparation** — `src/{{.data_product_name}}/data_preprocessing.py`
 - **Model training** — `src/{{.data_product_name}}/model/train_model.py`
 - **Model evaluation + registry** — RMSE logging + champion-alias promotion (`src/common/mlflow_helper.py`)
+- **Provenance tag** — `source_template=mlops_template` on every MLflow run, registered model and model version (`src/common/mlflow_helper.py`) and on every job in the bundle (`presets.tags` in `databricks.yml`). Find models with `mlflow.search_model_versions("tags.source_template = 'mlops_template'")`; jobs are filterable by tag in the Jobs UI and in `system.lakeflow` usage tables.
 - **Continuous integration** — `tests/` + `.github/workflows/unit_test.yml`
 - **Continuous delivery** — `databricks.yml` targets + `.github/`
 {{- if eq .include_ray "yes" }}
