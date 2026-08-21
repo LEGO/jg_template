@@ -1,5 +1,4 @@
 # Output schema, created by `bundle deploy` so it exists before any job runs.
-# Jobs read/write ${var.schema} in ${var.catalog}.
 
 resources:
   schemas:
@@ -7,3 +6,11 @@ resources:
       catalog_name: ${var.catalog}
       name: ${var.schema}
       comment: "{{.data_product_name}} output schema (${var.environment})"
+      grants:
+        - principal: ${var.permission_group}
+          privileges:
+            - USE_SCHEMA
+            - SELECT
+            - CREATE_TABLE
+            - MODIFY
+            - MANAGE

@@ -26,6 +26,10 @@ after your data product.
 | **Include batch prediction** | `yes` | Batch-scoring task. |
 | **Include data monitoring** | `yes` | Databricks Lakehouse data-monitoring job. |
 
+With **serving** and **data monitoring** both enabled you also get a prediction drift monitoring
+job: it flattens the endpoint's AI Gateway inference payload table and attaches a Lakehouse
+`InferenceLog` monitor to the result.
+
 ## What you always get (foundational)
 
 Data preparation, model training, model evaluation + registry (MLflow), continuous integration

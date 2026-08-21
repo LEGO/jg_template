@@ -32,6 +32,9 @@ test = [
     "pytest>=9.0.3",
     "pyspark>=3.5,<3.6",
     "delta-spark>=3.0,<4.0",
+    # See note above on the dev extra: required for
+    # databricks-feature-engineering to import.
+    "setuptools<81",
 ]
 
 [project.scripts]
@@ -51,6 +54,10 @@ batch_prediction = "{{.data_product_name}}.batch_prediction:main"
 {{- end }}
 {{- if eq .include_data_monitoring "yes" }}
 data_drift_report_job = "data_monitoring.data_drift_report:main"
+{{- end }}
+{{- if and (eq .include_serving "yes") (eq .include_data_monitoring "yes") }}
+inference_table_unpack = "{{.data_product_name}}.monitoring.unpack_inference_table:main"
+monitor_setup = "{{.data_product_name}}.monitoring.setup_monitor:main"
 {{- end }}
 
 [build-system]

@@ -32,6 +32,10 @@ This project was generated with:
 {{- if eq .include_data_monitoring "yes" }}
 - **Data monitoring** — `src/data_monitoring/data_drift_report.py` (Lakehouse quality monitor)
 {{- end }}
+{{- if and (eq .include_serving "yes") (eq .include_data_monitoring "yes") }}
+- **Prediction drift monitoring** — `src/{{.data_product_name}}/monitoring/` (unpacks the serving
+  endpoint's AI Gateway payload table, then attaches a Lakehouse `InferenceLog` monitor)
+{{- end }}
 
 ## Adapt to your data product
 

@@ -17,6 +17,14 @@
   {{- skip "src/data_monitoring" -}}
   {{- skip "tests/test_data_monitor.py" -}}
 {{- end -}}
+{{- /* Prediction drift monitoring reads the serving endpoint's AI Gateway payload table,
+       so it needs both the serving endpoint and data monitoring enabled. */ -}}
+{{- if not (and (eq .include_serving "yes") (eq .include_data_monitoring "yes")) -}}
+  {{- skip (printf "src/%s/monitoring" .data_product_name) -}}
+  {{- skip (printf "resources/%s/model_monitoring.yml" .data_product_name) -}}
+  {{- skip "tests/test_setup_monitor.py" -}}
+  {{- skip "tests/test_unpack_inference_table.py" -}}
+{{- end -}}
 # The automation bundle is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/6-mlops-continuous-delivery/#continuous-delivery.
 #
 # Explanation:
@@ -57,7 +65,9 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     description: The catalog to use (defaults to the data product name)
     default: {{.data_product_name}}
   schema:
-    description: The schema to use
+    description: >-
+      The schema to use. Overridden per target: personal schema for `local`
+      (own data/models/experiments), and the environment name for dev/qa/prod.
     default: {{.schema}}
   {{.data_product_name}}_source_table:
     description: >-
@@ -71,6 +81,9 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   {{.data_product_name}}_batch_prediction_table:
     description: The name of the batch prediction table
     default: ${var.{{.data_product_name}}_model_name}_batch_predictions
+  {{.data_product_name}}_unpacked_predictions_table:
+    description: The name of the unpacked predictions table for drift monitoring
+    default: ${var.{{.data_product_name}}_model_name}_predictions_unpacked
   {{.data_product_name}}_model_name:
     description: The name of the registered model (example default; rename for your product)
     default: anime_score_predictor
@@ -80,6 +93,9 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   data_monitoring_assets_dir:
     description: Team-shared workspace folder for the data monitor's generated assets
     default: /${var.team_name}/{{.data_product_name}}/${var.environment}/data_monitoring
+  model_monitoring_assets_dir:
+    description: Team-shared workspace folder for the prediction drift monitor's generated assets
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/model_monitoring
   pause_status:
     description: The default pause status for jobs
   policy_id:
@@ -105,6 +121,9 @@ targets:
       host: https://lego-ssc-dev.cloud.databricks.com
     variables:
       environment: dev
+      # Personal schema so each developer gets an isolated workspace (own data,
+      # models, experiments) that never collides with a teammate's.
+      schema: ${workspace.current_user.short_name}
       pause_status: PAUSED
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
@@ -117,6 +136,7 @@ targets:
       host: https://lego-ssc-dev.cloud.databricks.com
     variables:
       environment: dev
+      schema: dev
       pause_status: PAUSED
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
@@ -127,8 +147,9 @@ targets:
     workspace:
       host: https://lego-ssc-qa.cloud.databricks.com
       root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
-    variables:      
+    variables:
       environment: qa
+      schema: qa
       pause_status: PAUSED
       policy_id: A96377E9F70003FA
       databricks_host: https://lego-ssc-qa.cloud.databricks.com
@@ -141,6 +162,7 @@ targets:
       root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       environment: prod
+      schema: prod
       pause_status: UNPAUSED
       policy_id: A96377E9F70003FE
       databricks_host: https://lego-ssc-prod.cloud.databricks.com

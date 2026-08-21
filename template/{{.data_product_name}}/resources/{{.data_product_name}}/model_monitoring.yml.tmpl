@@ -1,0 +1,61 @@
+# Prediction drift monitoring job: flattens the serving endpoint's AI Gateway
+# inference payload table and attaches a Lakehouse InferenceLog monitor to it.
+
+resources:
+  jobs:
+    model_monitoring_job:
+      name: ${var.{{.data_product_name}}_model_name}_monitoring_job
+
+      schedule:
+        quartz_cron_expression: "0 0 7 ? * *"
+        timezone_id: Europe/Copenhagen
+        pause_status: ${var.pause_status}
+
+      tasks:
+        - task_key: unpack_inference_table
+          python_wheel_task:
+            package_name: {{.data_product_name}}
+            entry_point: inference_table_unpack
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.output_schema.name}
+              endpoint_name: ${var.{{.data_product_name}}_model_name}_endpoint
+              unpacked_table: ${var.{{.data_product_name}}_unpacked_predictions_table}
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: setup_monitor
+          python_wheel_task:
+            package_name: {{.data_product_name}}
+            entry_point: monitor_setup
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.output_schema.name}
+              unpacked_table: ${var.{{.data_product_name}}_unpacked_predictions_table}
+              assets_dir: ${var.model_monitoring_assets_dir}
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ../../dist/*.whl
+          depends_on:
+            - task_key: unpack_inference_table
+
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 17.3.x-cpu-ml-scala2.13
+            node_type_id: i3.2xlarge
+            policy_id: ${var.policy_id}
+            data_security_mode: SINGLE_USER
+            aws_attributes:
+              first_on_demand: 1
+              zone_id: "auto"
+            autoscale:
+              min_workers: 1
+              max_workers: 1
+            custom_tags:
+              SOURCE: "table"
+
+      permissions:
+        - group_name: ${var.permission_group}
+          level: CAN_MANAGE_RUN
