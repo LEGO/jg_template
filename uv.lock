@@ -1585,6 +1585,7 @@ test = [
     { name = "delta-spark" },
     { name = "pyspark" },
     { name = "pytest" },
+    { name = "setuptools" },
 ]
 
 [package.metadata]
@@ -1600,6 +1601,7 @@ requires-dist = [
     { name = "ray", extras = ["tune"], marker = "extra == 'dev'", specifier = ">=2.40.0" },
     { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.7.2" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = "<81" },
+    { name = "setuptools", marker = "extra == 'test'", specifier = "<81" },
 ]
 provides-extras = ["dev", "test"]
 

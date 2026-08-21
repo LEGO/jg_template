@@ -49,6 +49,14 @@ Four sequential stages:
 - Loads the `champion` model from the MLflow Registry, runs predictions on a random subset of the feature table, and upserts results into the predictions Delta table.
 - **Output:** `anime_score_predictor_batch_predictions` Delta table
 
+### 5. Prediction Drift Monitoring
+- **Entry:** [`unpack_inference_table.py`](../src/anime_score_predictor/monitoring/unpack_inference_table.py), [`setup_monitor.py`](../src/anime_score_predictor/monitoring/setup_monitor.py)
+- **Job:** [`model_monitoring.yml`](../resources/anime_score_predictor/model_monitoring.yml) (`unpack_inference_table` → `setup_monitor`)
+- Flattens the serving endpoint's `<endpoint>_payload` AI Gateway inference table into a typed `*_predictions_unpacked` Delta table (one successful row per scored record; error rows with `status_code != 200` are dropped), then creates/updates a managed Lakehouse Monitoring `InferenceLog` monitor on it. Each row keeps its input feature vector (`features`, zipped positionally with the prediction) alongside `Predicted_Score`. Databricks generates the profile-metrics table, drift-metrics table, and a monitoring dashboard. `model_version` is the payload table's `served_entity_id`, so drift can be sliced per served model version.
+- **Schedule:** Daily, 07:00 CET (aligned with the `1 day` monitor granularity)
+- **Output:** `anime_score_predictor_predictions_unpacked` Delta table + managed monitor assets
+- **Scope:** Prediction drift only; input-feature drift is handled separately.
+
 ---
 
 ## Data Architecture
@@ -60,7 +68,8 @@ ai_enablement (catalog)
 └── general_resources (schema)
     ├── anime_bronze (Delta)           # Raw source data
     ├── anime_features (Delta)         # Preprocessed features
-    └── anime_score_predictor_batch_predictions (Delta)  # Batch inference output
+    ├── anime_score_predictor_batch_predictions (Delta)  # Batch inference output
+    └── anime_score_predictor_predictions_unpacked (Delta)  # Flattened predictions for drift monitoring
 ```
 
 ### Key Schemas
@@ -95,6 +104,15 @@ Romance: int
 Parody: int
 Sci-Fi: int
 Predicted_Score: float
+```
+
+**anime_score_predictor_predictions_unpacked:**
+```
+record_id: string
+prediction_ts: timestamp
+Predicted_Score: double
+features: array<double>   # input feature vector (bare positional array, no genre names)
+model_version: string
 ```
 
 ---

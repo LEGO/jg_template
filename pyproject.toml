@@ -30,6 +30,9 @@ test = [
     "pytest>=9.0.3",
     "pyspark>=3.5,<3.6",
     "delta-spark>=3.0,<4.0",
+    # See note above on the dev extra: required for
+    # databricks-feature-engineering to import.
+    "setuptools<81",
 ]
 
 [project.scripts]
@@ -40,6 +43,8 @@ model_tuning_job = "anime_score_predictor.model.tune_model:main"
 model_tuning_ray_job = "anime_score_predictor.model.tune_model_ray:main"
 model_serving_job = "anime_score_predictor.model.serve:main"
 batch_prediction = "anime_score_predictor.batch_prediction:main"
+inference_table_unpack = "anime_score_predictor.monitoring.unpack_inference_table:main"
+monitor_setup = "anime_score_predictor.monitoring.setup_monitor:main"
 data_drift_report_job = "data_monitoring.data_drift_report:main"
 
 [build-system]

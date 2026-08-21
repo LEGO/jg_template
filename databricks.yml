@@ -41,6 +41,9 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   anime_score_predictor_batch_prediction_table:
     description: The name of the batch prediction table
     default: ${var.anime_score_predictor_model_name}_batch_predictions
+  anime_score_predictor_unpacked_predictions_table:
+    description: The name of the unpacked predictions table for drift monitoring
+    default: ${var.anime_score_predictor_model_name}_predictions_unpacked
   anime_score_predictor_model_name:
     description: The name of the feature model
     default: anime_score_predictor
