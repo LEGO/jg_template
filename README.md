@@ -54,6 +54,3 @@ Render locally without Git to test changes:
 ```bash
 databricks bundle init ./ --output-dir /tmp/render-test
 ```
-
-Model monitoring (serving inference-table monitor) and dataset-column parameterization are
-intentionally out of scope for now.
