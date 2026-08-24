@@ -5,7 +5,7 @@ resources:
     output_schema:
       catalog_name: ${var.catalog}
       name: ${var.schema}
-      comment: "mlops_pipeline output schema (${var.environment})"
+      comment: "{{.data_product_name}} output schema (${var.environment})"
       grants:
         - principal: ${var.permission_group}
           privileges:

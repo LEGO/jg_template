@@ -41,7 +41,7 @@ def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
     tune_model.py and tune_model_ray.py). The latest run by start time is used.
 
     Args:
-        experiment_path: MLflow experiment path, e.g. "/ai_agency/mlops_pipeline/dev/.../model_training".
+        experiment_path: MLflow experiment path, e.g. "/ai_agency/anime_score_predictor/dev/.../model_training".
 
     Returns:
         Dict of hyperparameter names to values, with the "best_" prefix stripped.

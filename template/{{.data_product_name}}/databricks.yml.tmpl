@@ -1,0 +1,169 @@
+{{- if ne .include_ray "yes" -}}
+  {{- skip (printf "src/%s/model/train_model_ray.py" .data_product_name) -}}
+  {{- skip "src/common/ray_helper.py" -}}
+  {{- skip (printf "resources/%s/model_training_ray.yml" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_hyperparameter_tuning "yes" -}}
+  {{- skip (printf "src/%s/model/tune_model_ray.py" .data_product_name) -}}
+  {{- skip (printf "resources/%s/model_tuning.yml" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_serving "yes" -}}
+  {{- skip (printf "src/%s/model/serve.py" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_batch_prediction "yes" -}}
+  {{- skip (printf "src/%s/batch_prediction.py" .data_product_name) -}}
+{{- end -}}
+{{- if ne .include_data_monitoring "yes" -}}
+  {{- skip "src/data_monitoring" -}}
+  {{- skip "tests/test_data_monitor.py" -}}
+{{- end -}}
+{{- /* Prediction drift monitoring reads the serving endpoint's AI Gateway payload table,
+       so it needs both the serving endpoint and data monitoring enabled. */ -}}
+{{- if not (and (eq .include_serving "yes") (eq .include_data_monitoring "yes")) -}}
+  {{- skip (printf "src/%s/monitoring" .data_product_name) -}}
+  {{- skip (printf "resources/%s/model_monitoring.yml" .data_product_name) -}}
+  {{- skip "tests/test_setup_monitor.py" -}}
+  {{- skip "tests/test_unpack_inference_table.py" -}}
+{{- end -}}
+# The automation bundle is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/6-mlops-continuous-delivery/#continuous-delivery.
+#
+# Explanation:
+# CD1) The bundle orchestrates  all the necessary components for a complete ML pipeline in the right order with workflows.
+# CD2) Deployment with a CI/CD tool deploys source code to cloud infrastructure easily ensuring symmetry between environments.
+
+bundle:
+  name: {{.data_product_name}}
+
+include:
+  - resources/*.yml
+  - resources/**/*.yml
+
+presets:
+  # Provenance tag applied to every taggable resource in the bundle (jobs, MLflow
+  # experiments). Mirrors the `source_template` tag that mlflow_helper.py puts on runs,
+  # registered models and model versions — so a whole project generated from the MLOps
+  # template is traceable end to end. Target-level presets merge with these per key, so
+  # the per-user `name_prefix` on the `local` target keeps working.
+  # NOTE Delete this block if you do not want the provenance tag; nothing else depends on it.
+  tags:
+    source_template: mlops_template
+
+artifacts:
+  default:
+    dynamic_version: true 
+    type: whl
+    build: uv build
+    path: .
+
+variables: #NOTE Defined at the bundle level to be shared across all jobs, and can be overridden at the target level if needed.
+  environment:
+    description: The deployment environment
+  team_name:
+    description: The team's top-level workspace folder. Single source of truth — set once here.
+    default: ai_agency
+  catalog:
+    description: The catalog to use (defaults to the data product name)
+    default: {{.data_product_name}}
+  schema:
+    description: >-
+      The schema to use. Overridden per target: personal schema for `local`
+      (own data/models/experiments), and the environment name for dev/qa/prod.
+    default: {{.schema}}
+  {{.data_product_name}}_source_table:
+    description: >-
+      Fully-qualified raw source table the preprocessing job reads. Decoupled from the
+      write schema — may be another team's schema, catalog, etc. Defaults to the shared
+      sandbox table so the example runs regardless of the chosen catalog/product name.
+    default: ai_enablement.general_resources.anime_bronze
+  {{.data_product_name}}_feature_store_table_name:
+    description: The name of the feature store table
+    default: anime_features
+  {{.data_product_name}}_batch_prediction_table:
+    description: The name of the batch prediction table
+    default: ${var.{{.data_product_name}}_model_name}_batch_predictions
+  {{.data_product_name}}_unpacked_predictions_table:
+    description: The name of the unpacked predictions table for drift monitoring
+    default: ${var.{{.data_product_name}}_model_name}_predictions_unpacked
+  {{.data_product_name}}_model_name:
+    description: The name of the registered model (example default; rename for your product)
+    default: anime_score_predictor
+  {{.data_product_name}}_experiment_path:
+    description: The path to the mlflow experiment
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/${workspace.current_user.userName}/${var.{{.data_product_name}}_model_name}
+  data_monitoring_assets_dir:
+    description: Team-shared workspace folder for the data monitor's generated assets
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/data_monitoring
+  model_monitoring_assets_dir:
+    description: Team-shared workspace folder for the prediction drift monitor's generated assets
+    default: /${var.team_name}/{{.data_product_name}}/${var.environment}/model_monitoring
+  pause_status:
+    description: The default pause status for jobs
+  policy_id:
+    description: Policy ID for cluster
+    lookup:
+      cluster_policy: Job Cluster Policy
+  databricks_host:
+    description: The Databricks workspace host URL
+  secret_scope:
+    description: The secret scope for the deployment environment
+  permission_group:
+    description: Databricks permission group to grant access to the deployed assets
+    default: c1.app.access.sscdp.aiops_dev.developer
+
+targets:
+  # local: local development via Databricks CLI / VSCode extension. Per-user prefix isolates assets.
+  local:
+    mode: development
+    default: true
+    presets:
+      name_prefix: '[${workspace.current_user.short_name}] '
+    workspace:
+      host: https://lego-ssc-dev.cloud.databricks.com
+    variables:
+      environment: dev
+      # Personal schema so each developer gets an isolated workspace (own data,
+      # models, experiments) that never collides with a teammate's.
+      schema: ${workspace.current_user.short_name}
+      pause_status: PAUSED
+      policy_id: A963D86B02001DC8
+      databricks_host: https://lego-ssc-dev.cloud.databricks.com
+      secret_scope: ${var.catalog}.dev.sp.secret_scope
+
+  # dev/qa/prod: deployed only through GitHub Actions (service principal).
+  dev:
+    mode: development
+    workspace:
+      host: https://lego-ssc-dev.cloud.databricks.com
+    variables:
+      environment: dev
+      schema: dev
+      pause_status: PAUSED
+      policy_id: A963D86B02001DC8
+      databricks_host: https://lego-ssc-dev.cloud.databricks.com
+      secret_scope: ${var.catalog}.dev.sp.secret_scope
+
+  qa:
+    mode: production
+    workspace:
+      host: https://lego-ssc-qa.cloud.databricks.com
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      environment: qa
+      schema: qa
+      pause_status: PAUSED
+      policy_id: A96377E9F70003FA
+      databricks_host: https://lego-ssc-qa.cloud.databricks.com
+      secret_scope: ${var.catalog}.qa.sp.secret_scope
+
+  prod:
+    mode: production
+    workspace:
+      host: https://lego-ssc-prod.cloud.databricks.com
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      environment: prod
+      schema: prod
+      pause_status: UNPAUSED
+      policy_id: A96377E9F70003FE
+      databricks_host: https://lego-ssc-prod.cloud.databricks.com
+      secret_scope: ${var.catalog}.prod.sp.secret_scope

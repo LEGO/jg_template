@@ -9,7 +9,7 @@ def _client():
 
 
 def test_creates_monitor_when_not_found():
-    from anime_score_predictor.monitoring.setup_monitor import create_or_update_monitor
+    from {{.data_product_name}}.monitoring.setup_monitor import create_or_update_monitor
 
     client = _client()
     client.quality_monitors.get.side_effect = NotFound("nope")
@@ -36,7 +36,7 @@ def test_creates_monitor_when_not_found():
 
 
 def test_updates_monitor_when_exists():
-    from anime_score_predictor.monitoring.setup_monitor import create_or_update_monitor
+    from {{.data_product_name}}.monitoring.setup_monitor import create_or_update_monitor
 
     client = _client()
     client.quality_monitors.get.return_value = MagicMock()  # exists

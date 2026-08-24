@@ -34,14 +34,14 @@ def test_get_logger_suppresses_noisy_libraries():
 
 
 def test_load_model_config_has_required_keys():
-    config_path = Path(__file__).parent.parent / "src/anime_score_predictor/model/model_config.yml"
+    config_path = Path(__file__).parent.parent / "src/{{.data_product_name}}/model/model_config.yml"
     cfg = load_model_config(config_path=config_path)
     assert "tuning" in cfg
     assert not "auhwdukahwd" in cfg
 
 
 def test_load_model_config_learning_rate():
-    config_path = Path(__file__).parent.parent / "src/anime_score_predictor/model/model_config.yml"
+    config_path = Path(__file__).parent.parent / "src/{{.data_product_name}}/model/model_config.yml"
     cfg = load_model_config(config_path=config_path)
     assert cfg.tuning.learning_rate.low > 0
     assert cfg.tuning.learning_rate.high <= 1

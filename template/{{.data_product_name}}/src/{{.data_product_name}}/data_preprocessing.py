@@ -90,7 +90,7 @@ def _parse_args() -> argparse.Namespace:
         "--source_table",
         required=True,
         help="Fully-qualified source table to read, e.g. 'catalog.schema.table'. "
-        "Decoupled from the write schema: the source may be another team's "
+        "Decoupled from the write catalog/schema: the source may be another team's "
         "schema, another catalog, etc. — not necessarily where features are written.",
     )
     parser.add_argument(

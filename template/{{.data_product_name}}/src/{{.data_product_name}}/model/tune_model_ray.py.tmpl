@@ -17,7 +17,7 @@ from sklearn.metrics import mean_squared_error
 from common.mlflow_helper import set_champion_alias_on_logged_model, start_mlflow_experiment_and_run
 from common.spark_helper import get_spark_session
 from common.utils import get_logger, load_model_config
-from anime_score_predictor.model.train_model import prepare_data
+from {{.data_product_name}}.model.train_model import prepare_data
 
 logger = get_logger()
 

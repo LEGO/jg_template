@@ -48,7 +48,7 @@ def _payload_row(
 
 
 def test_unpack_explodes_one_row_per_prediction(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     df = spark.createDataFrame(
@@ -69,7 +69,7 @@ def test_unpack_explodes_one_row_per_prediction(spark):
 
 
 def test_unpack_zips_features_with_predictions_by_position(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     # Two records in one request: each prediction keeps its own feature vector.
@@ -93,7 +93,7 @@ def test_unpack_zips_features_with_predictions_by_position(spark):
 
 
 def test_unpack_carries_served_entity_id_as_model_version(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     df = spark.createDataFrame(
@@ -106,7 +106,7 @@ def test_unpack_carries_served_entity_id_as_model_version(spark):
 
 
 def test_unpack_drops_error_rows(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     ok = _payload_row("req-ok", ts, [7.5])
@@ -127,7 +127,7 @@ def test_unpack_drops_error_rows(spark):
 
 
 def test_unpack_output_schema(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     ts = datetime.datetime(2020, 9, 13, 12, 26, 40)
     df = spark.createDataFrame(
@@ -150,7 +150,7 @@ def test_unpack_output_schema(spark):
 
 
 def test_unpack_empty_input_returns_empty_with_schema(spark):
-    from anime_score_predictor.monitoring.unpack_inference_table import unpack_payload
+    from {{.data_product_name}}.monitoring.unpack_inference_table import unpack_payload
 
     df = spark.createDataFrame(
         [],
@@ -176,7 +176,7 @@ def test_empty_unpacked_table_returns_zero_rows_with_correct_schema(spark):
     _payload source is absent or empty, main() calls this helper to write a
     typed empty target table so the downstream setup_monitor task has a target.
     """
-    from anime_score_predictor.monitoring.unpack_inference_table import empty_unpacked_table
+    from {{.data_product_name}}.monitoring.unpack_inference_table import empty_unpacked_table
 
     out = empty_unpacked_table(spark)
 
