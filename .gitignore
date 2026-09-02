@@ -1,0 +1,11 @@
+docs/superpowers/*
+
+# Local-only dev environment used to resolve/upgrade the template's dependency
+# set (e.g. to clear CVEs). The real project file ships as
+# template/{{.data_product_name}}/pyproject.toml.tmpl — anchored to the repo
+# root so the template copy is never ignored.
+/pyproject.toml
+/.venv/
+/dist/
+/.pytest_cache/
+!/template/{{.data_product_name}}/
