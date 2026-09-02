@@ -8,3 +8,4 @@ docs/superpowers/*
 /.venv/
 /dist/
 /.pytest_cache/
+!/template/{{.data_product_name}}/
