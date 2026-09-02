@@ -8,7 +8,7 @@ that scaffolds an MLOps project on Databricks with only the components you need.
 ## Usage
 
 ```bash
-databricks bundle init https://github.com/LEGO/MLOps-template
+databricks bundle init https://github.com/LEGO/mlops_template
 ```
 
 You'll be prompted for a few values, then a ready-to-run project is generated in a folder named
