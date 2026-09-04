@@ -64,13 +64,23 @@ Four sequential stages:
 ### Unity Catalog Structure
 
 ```
-ai_enablement (catalog)
-└── general_resources (schema)
-    ├── anime_bronze (Delta)           # Raw source data
-    ├── anime_features (Delta)         # Preprocessed features
+my_ml_product (catalog)
+├── dev_general_resources (schema)          # NOT model-specific: shared/curated tables, lookups
+│   └── ...
+└── dev_anime_score_predictor_model (schema)  # everything for one model
+    ├── anime_features (Delta)         # Features prepped for this model
+    ├── anime_score_predictor (UC model)
     ├── anime_score_predictor_batch_predictions (Delta)  # Batch inference output
-    └── anime_score_predictor_predictions_unpacked (Delta)  # Flattened predictions for drift monitoring
+    ├── anime_score_predictor_predictions_unpacked (Delta)  # Flattened predictions for drift monitoring
+    └── <monitor profile/drift metric tables>
 ```
+
+Schema naming is `<env>_<...>`, where `<env>` is `dev` / `qa` / `prod`. The `local` target maps
+to `dev` and appends the developer's short username (`${workspace.current_user.externalId}`), e.g.
+`my_ml_product.dev_dkAndrMo_general_resources` and
+`my_ml_product.dev_dkAndrMo_anime_score_predictor_model`.
+
+Raw source data lives outside the bundle (default `ai_enablement.general_resources.anime_bronze`).
 
 ### Key Schemas
 
@@ -149,8 +159,10 @@ model_version: string
 
 **Key variables (dev):**
 ```yaml
-catalog: ai_enablement
-schema: general_resources
+catalog: my_ml_product
+schema_prefix: dev            # local: dev_<short_name>
+general_schema: ${var.schema_prefix}_general_resources
+my_ml_product_model_schema: ${var.schema_prefix}_${var.my_ml_product_model_name}_model
 model_name: anime_score_predictor
 feature_store_table_name: anime_features
 batch_prediction_table: anime_score_predictor_batch_predictions

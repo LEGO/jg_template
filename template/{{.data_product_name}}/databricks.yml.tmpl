@@ -64,11 +64,28 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
   catalog:
     description: The catalog to use (defaults to the data product name)
     default: {{.data_product_name}}
-  schema:
+  job_name_prefix:
     description: >-
-      The schema to use. Overridden per target: personal schema for `local`
-      (own data/models/experiments), and the environment name for dev/qa/prod.
-    default: {{.schema}}
+      Prefix put in front of every job name. Empty for the deployed environments; the
+      `local` target sets it to the developer's short name so personal deploys are easy
+      to tell apart in the workspace job list.
+    default: ""
+  schema_prefix:
+    description: >-
+      Prefix shared by every schema this bundle creates. Set per target: `dev` for both
+      `local` and `dev`, then `qa` / `prod`. On `local` the developer's short name is
+      appended (e.g. `dev_dkAndrMo`) so each developer is isolated from teammates.
+  general_schema:
+    description: >-
+      Schema for everything that is NOT specific to a single model — shared/curated
+      tables, lookup data, anything reused across models. Always deployed.
+    default: ${var.schema_prefix}_{{.general_schema_name}}
+  {{.data_product_name}}_model_schema:
+    description: >-
+      Schema for everything specific to one model: the registered model itself, the
+      features prepped for it, its batch predictions and its drift/monitoring tables.
+      Add one variable + one `resources.schemas` entry per extra model.
+    default: ${var.schema_prefix}_${var.{{.data_product_name}}_model_name}_model
   {{.data_product_name}}_source_table:
     description: >-
       Fully-qualified raw source table the preprocessing job reads. Decoupled from the
@@ -111,19 +128,28 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: c1.app.access.sscdp.aiops_dev.developer
 
 targets:
-  # local: local development via Databricks CLI / VSCode extension. Per-user prefix isolates assets.
+  # local: local development via Databricks CLI / VSCode extension. Per-user schema prefix
+  # and job-name prefix isolate assets from teammates.
+  #
+  # `externalId` is the corporate short username (e.g. `dkAndrMo`) — much shorter than
+  # `short_name`, which is the whole email local part (`andreas_moelgaard_andersen`).
+  # NOTE It comes from the SCIM identity sync; if your workspace user has no `externalId`,
+  # `bundle validate` fails on the reference — swap it for
+  # `${workspace.current_user.short_name}` or hardcode your own prefix.
+  # NOTE No `mode: development` on purpose: that preset silently prepends
+  # `dev_<short_name>_` to every schema and `[dev <short_name>] ` to every job name, which
+  # would double up on the prefixes this bundle sets explicitly.
   local:
-    mode: development
     default: true
-    presets:
-      name_prefix: '[${workspace.current_user.short_name}] '
     workspace:
       host: https://lego-ssc-dev.cloud.databricks.com
     variables:
+      job_name_prefix: '[${workspace.current_user.externalId}] '
       environment: dev
-      # Personal schema so each developer gets an isolated workspace (own data,
-      # models, experiments) that never collides with a teammate's.
-      schema: ${workspace.current_user.short_name}
+      # `local` points at the dev environment, suffixed with the developer's short
+      # username so each developer gets isolated schemas (own data, models, experiments)
+      # that never collide with a teammate's: dev_<user>_general_resources, etc.
+      schema_prefix: dev_${workspace.current_user.externalId}
       pause_status: PAUSED
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
@@ -131,12 +157,11 @@ targets:
 
   # dev/qa/prod: deployed only through GitHub Actions (service principal).
   dev:
-    mode: development
     workspace:
       host: https://lego-ssc-dev.cloud.databricks.com
     variables:
       environment: dev
-      schema: dev
+      schema_prefix: dev
       pause_status: PAUSED
       policy_id: A963D86B02001DC8
       databricks_host: https://lego-ssc-dev.cloud.databricks.com
@@ -149,7 +174,7 @@ targets:
       root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       environment: qa
-      schema: qa
+      schema_prefix: qa
       pause_status: PAUSED
       policy_id: A96377E9F70003FA
       databricks_host: https://lego-ssc-qa.cloud.databricks.com
@@ -162,7 +187,7 @@ targets:
       root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       environment: prod
-      schema: prod
+      schema_prefix: prod
       pause_status: UNPAUSED
       policy_id: A96377E9F70003FE
       databricks_host: https://lego-ssc-prod.cloud.databricks.com

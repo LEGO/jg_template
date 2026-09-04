@@ -19,7 +19,7 @@ after your data product.
 | Prompt | Default | Purpose |
 |---|---|---|
 | **Data Product Name** | `my_ml_product` | Python package, bundle name, model name, resource identifiers, **and the UC catalog** (catalog = this name). Must be a valid Python/UC name (`^[a-z][a-z0-9_]*$`). |
-| **Schema** | `general_resources` | Unity Catalog output schema. |
+| **Shared schema name** | `general_resources` | Base name of the schema for non-model-specific tables. Prefixed with the environment (`dev_general_resources`, …). Model-specific assets land in a separate `<env>_<model_name>_model` schema. |
 | **Include Ray** | `no` | Ray distributed-training path + GPU job + `ray[tune]` dep. |
 | **Include hyperparameter tuning** | `no` | Ray Tune + Optuna tuning job. |
 | **Include serving** | `yes` | Real-time model-serving endpoint task. |

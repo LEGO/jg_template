@@ -4,7 +4,7 @@
 resources:
   jobs:
     model_monitoring_job:
-      name: ${var.{{.data_product_name}}_model_name}_monitoring_job
+      name: ${var.job_name_prefix}${var.{{.data_product_name}}_model_name}_monitoring_job
 
       schedule:
         quartz_cron_expression: "0 0 7 ? * *"
@@ -18,7 +18,7 @@ resources:
             entry_point: inference_table_unpack
             named_parameters:
               catalog: ${var.catalog}
-              schema: ${resources.schemas.output_schema.name}
+              schema: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               endpoint_name: ${var.{{.data_product_name}}_model_name}_endpoint
               unpacked_table: ${var.{{.data_product_name}}_unpacked_predictions_table}
           job_cluster_key: job_cluster
@@ -31,7 +31,7 @@ resources:
             entry_point: monitor_setup
             named_parameters:
               catalog: ${var.catalog}
-              schema: ${resources.schemas.output_schema.name}
+              schema: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               unpacked_table: ${var.{{.data_product_name}}_unpacked_predictions_table}
               assets_dir: ${var.model_monitoring_assets_dir}
           job_cluster_key: job_cluster

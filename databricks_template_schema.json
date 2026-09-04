@@ -9,10 +9,12 @@
       "description": "\nData Product Name.\nUsed as the Python package, bundle name, model name, workspace folder, and resource identifiers throughout the project",
       "order": 1
     },
-    "schema": {
+    "general_schema_name": {
       "type": "string",
       "default": "general_resources",
-      "description": "\nUnity Catalog schema for the project's output tables",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "pattern_match_failure_message": "Must start with a lowercase letter and contain only lowercase letters, digits, and underscores (valid Unity Catalog schema name).",
+      "description": "\nBase name of the shared schema holding everything NOT specific to a single model.\nThe deployment environment is prefixed automatically: dev_general_resources, qa_general_resources, ...\n(model-specific assets get their own <env>_<model_name>_model schema)",
       "order": 2
     },
     "include_ray": {

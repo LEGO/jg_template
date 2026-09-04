@@ -3,7 +3,7 @@
 resources:
   jobs:
     model_hyperparameter_tuning_job:
-      name: ${var.{{.data_product_name}}_model_name}_hyperparameter_tuning_job
+      name: ${var.job_name_prefix}${var.{{.data_product_name}}_model_name}_hyperparameter_tuning_job
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON#1"
@@ -21,7 +21,7 @@ resources:
             entry_point: model_tuning_ray_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog: ${var.catalog}
-              schema: ${resources.schemas.output_schema.name}
+              schema: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               model_name: ${var.{{.data_product_name}}_model_name}_hyperparameter_tuning
               feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
               experiment_path: ${var.{{.data_product_name}}_experiment_path}_hyperparameter_tuning

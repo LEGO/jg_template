@@ -63,7 +63,7 @@ If they have no preference at all, state the recommended answer and why, then pr
 | # | Prompt | Default | Drives |
 |---|--------|---------|--------|
 | 1 | Data Product Name | `my_ml_product` | Python package, bundle name, model name, workspace folder, **and the UC catalog**. Must match `^[a-z][a-z0-9_]*$`. |
-| 2 | Schema | `general_resources` | UC output schema for the project's tables. |
+| 2 | Shared schema name | `general_resources` | Base name of the schema for **non-model-specific** tables; the environment is prefixed automatically (`dev_general_resources`). Model-specific assets get their own `<env>_<model_name>_model` schema. |
 | 3 | Include Ray | `no` | Ray distributed-training path + GPU job + `ray[tune]`. |
 | 4 | Include hyperparameter tuning | `no` | Ray Tune + Optuna tuning job. |
 | 5 | Include serving | `yes`* | Real-time model-serving endpoint task. |
@@ -79,9 +79,21 @@ provisions; any valid name works for local rendering. The raw source table is a
 `ai_enablement.general_resources.anime_bronze` — the example runs regardless of
 catalog choice.
 
-**2 — Schema.** Output schema for feature/prediction Delta tables.
-`general_resources` is a safe shared default; use a product-specific schema if org
-convention wants one.
+**2 — Shared schema name.** Base name of the schema for everything **not** tied to a
+single model (shared/curated tables, lookups). `general_resources` is a safe default.
+The bundle always deploys two kinds of schema, both prefixed with the environment:
+
+- `${var.schema_prefix}_<shared schema name>` — non-model-specific.
+- `${var.schema_prefix}_<model_name>_model` — the registered model, the features prepped
+  for it, its batch predictions, its drift/monitoring tables. One per model: copy the
+  `<name>_model_schema` variable + the `resources/schema.yml` block for a second model.
+
+`schema_prefix` is `dev` / `qa` / `prod`; the `local` target maps to `dev` and appends the
+developer's short username `${workspace.current_user.externalId}` (SCIM corporate id, e.g.
+`dkAndrMo` — *not* `short_name`, which is the full email local part), so a local deploy writes
+to `my_ml_product.dev_dkAndrMo_general_resources.*` and
+`my_ml_product.dev_dkAndrMo_anime_score_predictor_model.*`. If a user has no `externalId`,
+`bundle validate` fails on that reference — fall back to `short_name`.
 
 **3 — Ray (the big one).** Default training is single-node scikit-learn on CPU
 (`i3.2xlarge`, autoscale 1) — right for most tabular ML. **No** when data fits one

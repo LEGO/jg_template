@@ -1,11 +1,37 @@
-# Output schema, created by `bundle deploy` so it exists before any job runs.
+# Output schemas, created by `bundle deploy` so they exist before any job runs.
+#
+# Two kinds of schema, one naming convention (`<env>_...`, with the developer's short
+# name added on the `local` target):
+#
+#   general schema  ->  ${var.catalog}.${var.general_schema}
+#       Everything NOT tied to one model: shared/curated tables, lookup data, anything
+#       reused across models. Always deployed, even when empty at first.
+#
+#   per-model schema ->  ${var.catalog}.${var.{{.data_product_name}}_model_schema}
+#       Everything specific to one model: the registered model, the features prepped for
+#       that model, its batch predictions, its drift/monitoring tables.
+#       NOTE For a second model, copy the `{{.data_product_name}}_model_schema` variable and the
+#       resource block below, and point that model's jobs at the new schema.
 
 resources:
   schemas:
-    output_schema:
+    general_schema:
       catalog_name: ${var.catalog}
-      name: ${var.schema}
-      comment: "{{.data_product_name}} output schema (${var.environment})"
+      name: ${var.general_schema}
+      comment: "{{.data_product_name}} shared, non-model-specific resources (${var.environment})"
+      grants:
+        - principal: ${var.permission_group}
+          privileges:
+            - USE_SCHEMA
+            - SELECT
+            - CREATE_TABLE
+            - MODIFY
+            - MANAGE
+
+    {{.data_product_name}}_model_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.{{.data_product_name}}_model_schema}
+      comment: "Resources specific to the ${var.{{.data_product_name}}_model_name} model (${var.environment})"
       grants:
         - principal: ${var.permission_group}
           privileges:

@@ -3,7 +3,7 @@
 resources:
   jobs:
     data_preprocessing_job:
-      name: ${var.{{.data_product_name}}_model_name}_data_preprocessing_job
+      name: ${var.job_name_prefix}${var.{{.data_product_name}}_model_name}_data_preprocessing_job
 
       schedule:
         quartz_cron_expression: "0 0 4 ? * MON"
@@ -21,7 +21,7 @@ resources:
             entry_point: data_processing_job
             named_parameters: #NOTE named_parameters are parsed or overwritten variables at workflow level.
               catalog_name: ${var.catalog}
-              schema_name: ${resources.schemas.output_schema.name}
+              schema_name: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               source_table: ${var.{{.data_product_name}}_source_table}
               feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
               experiment_path: ${var.{{.data_product_name}}_experiment_path}_data_preprocessing
@@ -39,9 +39,9 @@ resources:
             entry_point: data_drift_report_job
             named_parameters:
               catalog_name: ${var.catalog}
-              schema_name: ${resources.schemas.output_schema.name}
+              schema_name: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               table_name: ${var.{{.data_product_name}}_feature_store_table_name}
-              output_schema_name: ${var.catalog}.${resources.schemas.output_schema.name}
+              output_schema_name: ${var.catalog}.${resources.schemas.{{.data_product_name}}_model_schema.name}
               assets_dir: ${var.data_monitoring_assets_dir}
           job_cluster_key: job_cluster
           libraries:

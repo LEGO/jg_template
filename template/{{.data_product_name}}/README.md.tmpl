@@ -45,8 +45,23 @@ The example carries anime-specific logic (target column `Score`, id `Name`, genr
 - `src/{{.data_product_name}}/model/train_model.py` + `model/model_config.yml` — your model + params
 - `databricks.yml` variables and `resources/{{.data_product_name}}/*.yml` job schedules/clusters
 
-`catalog` (defaults to `{{.data_product_name}}`) and `schema` (`{{.schema}}`) are bundle variables
-in `databricks.yml`. The raw source table defaults to the shared sandbox
+`catalog` (defaults to `{{.data_product_name}}`) and the schema variables are bundle variables
+in `databricks.yml`. Schemas are split in two, both prefixed with the environment
+(`dev` / `qa` / `prod`, and the `local` target adds your short username):
+
+- `general_schema` — `${var.schema_prefix}_{{.general_schema_name}}`: everything **not** tied to a
+  single model (shared/curated tables, lookup data).
+- `{{.data_product_name}}_model_schema` — `${var.schema_prefix}_${var.{{.data_product_name}}_model_name}_model`:
+  everything specific to one model — the registered model, the features prepped for it, its
+  batch predictions, its drift/monitoring tables. For a second model, copy that variable and
+  the matching block in `resources/schema.yml`.
+
+So on `local` a developer `dkAndrMo` writes to `{{.data_product_name}}.dev_dkAndrMo_general_resources.*`
+and `{{.data_product_name}}.dev_dkAndrMo_${var.{{.data_product_name}}_model_name}_model.*`. The short
+username comes from `${workspace.current_user.externalId}` (the SCIM-synced corporate id) — not
+`short_name`, which is the whole email local part.
+
+The raw source table defaults to the shared sandbox
 `ai_enablement.general_resources.anime_bronze` so the example runs off the shelf — point
 `{{.data_product_name}}_source_table` at your own data.
 
