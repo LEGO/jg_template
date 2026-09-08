@@ -261,8 +261,9 @@ def main() -> None:
             permission_group = args.permission_group,
         )
 
-        # Log endpoint URL
-        endpoint_url = f"https://{workspace_client.config.host}/serving-endpoints/{args.serving_endpoint_name}/invocations"
+        # Log endpoint URL. `config.host` already includes the scheme, so don't prepend it.
+        host = workspace_client.config.host.rstrip("/")
+        endpoint_url = f"{host}/serving-endpoints/{args.serving_endpoint_name}/invocations"
 
         logger.info("Deployment complete!")
         logger.info(f"Endpoint URL: {endpoint_url}")
@@ -271,7 +272,17 @@ def main() -> None:
         logger.info(f'  curl -X POST "{endpoint_url}" \\')
         logger.info('    -H "Authorization: Bearer $DATABRICKS_TOKEN" \\')
         logger.info('    -H "Content-Type: application/json" \\')
-        logger.info('    -d \'{"dataframe_records": [{"feature1": 1.0, "feature2": 2.0}]}\'')
+        # train_model.py fits on `pdf[feature_cols].values` and signs the model with
+        # `infer_signature(X_train, preds)`, i.e. an *unnamed tensor* of shape (-1, n_features).
+        # The endpoint therefore takes the `inputs` tensor format, not `dataframe_records`:
+        # one list of feature values per row, ordered exactly as the feature table's
+        # columns minus the id and target columns.
+        logger.info('    -d \'{"inputs": [[0, 1, 0]]}\'')
+        logger.info("")
+        logger.info(
+            "  NOTE `inputs` rows must be the trained feature count, in feature-table "
+            "column order (id and target columns excluded)."
+        )
 
     except Exception as e:
         logger.error(f"Deployment failed: {e}")
