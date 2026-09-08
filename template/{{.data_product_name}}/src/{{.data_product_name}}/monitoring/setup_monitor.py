@@ -1,4 +1,5 @@
 import argparse
+import time
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
@@ -11,6 +12,11 @@ from common.utils import get_logger
 
 logger = get_logger()
 
+# Compared as plain strings: the SDK may hand back either a MonitorInfoStatus enum
+# or a raw string, and these are the documented wire values.
+_STATUS_ACTIVE = "MONITOR_STATUS_ACTIVE"
+_STATUS_FAILURES = ("MONITOR_STATUS_ERROR", "MONITOR_STATUS_FAILED")
+
 
 def _inference_log() -> MonitorInferenceLog:
     return MonitorInferenceLog(
@@ -22,13 +28,60 @@ def _inference_log() -> MonitorInferenceLog:
     )
 
 
+def _wait_until_active(
+    workspace_client: WorkspaceClient,
+    table_name: str,
+    timeout_seconds: int = 1800,
+    poll_seconds: int = 30,
+) -> None:
+    """Block until the monitor leaves MONITOR_STATUS_PENDING.
+
+    Creating or updating a monitor returns as soon as the request is accepted; Databricks
+    then provisions the metric tables and dashboard while the monitor sits in
+    MONITOR_STATUS_PENDING. `run_refresh` is rejected in that state, so callers must wait.
+    The SDK exposes no waiter for quality monitors, hence the explicit poll.
+
+    Args:
+        workspace_client: Databricks workspace client.
+        table_name: Fully qualified monitored table (catalog.schema.table).
+        timeout_seconds: Give up after this long so a stuck monitor fails the task
+            instead of holding the cluster indefinitely.
+        poll_seconds: Delay between status checks.
+
+    Raises:
+        RuntimeError: If the monitor reports a failure status.
+        TimeoutError: If the monitor is still not active within `timeout_seconds`.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        info = workspace_client.quality_monitors.get(table_name=table_name)
+        status = str(getattr(info.status, "value", info.status))
+
+        if status == _STATUS_ACTIVE:
+            logger.info(f"Monitor '{table_name}' is active")
+            return
+        if status in _STATUS_FAILURES:
+            raise RuntimeError(f"Monitor for '{table_name}' entered {status}")
+
+        logger.info(f"Monitor '{table_name}' is {status}; polling again in {poll_seconds}s")
+        time.sleep(poll_seconds)
+
+    raise TimeoutError(
+        f"Monitor for '{table_name}' still not active after {timeout_seconds}s"
+    )
+
+
 def create_or_update_monitor(
     workspace_client: WorkspaceClient,
     table_name: str,
     output_schema_name: str,
     assets_dir: str,
 ) -> None:
-    """Create or update a Lakehouse InferenceLog monitor, then trigger a refresh.
+    """Create or update a Lakehouse InferenceLog monitor, refreshing it when needed.
+
+    Waits for the monitor to become active before refreshing. A newly created monitor
+    is refreshed automatically by Databricks, so an explicit refresh is issued only on
+    the update path. Safe to call repeatedly.
 
     Args:
         workspace_client: Databricks workspace client.
@@ -44,6 +97,8 @@ def create_or_update_monitor(
             output_schema_name=output_schema_name,
             inference_log=_inference_log(),
         )
+        # An update changes config only; metrics need an explicit recompute.
+        needs_refresh = True
     except NotFound:
         logger.info(f"Monitor for '{table_name}' not found. Creating...")
         workspace_client.quality_monitors.create(
@@ -52,9 +107,14 @@ def create_or_update_monitor(
             assets_dir=assets_dir,
             inference_log=_inference_log(),
         )
+        # Creation triggers its own initial refresh; a second one would be redundant.
+        needs_refresh = False
 
-    logger.info(f"Triggering refresh for monitor '{table_name}'")
-    workspace_client.quality_monitors.run_refresh(table_name=table_name)
+    _wait_until_active(workspace_client=workspace_client, table_name=table_name)
+
+    if needs_refresh:
+        logger.info(f"Triggering refresh for monitor '{table_name}'")
+        workspace_client.quality_monitors.run_refresh(table_name=table_name)
 
 
 def _parse_args() -> argparse.Namespace:
