@@ -4,7 +4,11 @@ import pytest
 from pyspark.sql import SparkSession
 
 from {{.data_product_name}}.data_preprocessing import (
+    _optional_year,
+    alter_table_with_comments,
+    apply_year_window,
     build_category_vocabulary,
+    build_feature_frame,
     create_category_onehot_encodings,
     deduplicate_on_key,
     drop_invalid_rows,
@@ -200,3 +204,102 @@ def test_create_category_onehot_encodings_raises_on_column_collision(spark):
         create_category_onehot_encodings(
             _bronze(spark, rows), "theme_name", ["Bricks & More", "Bricks More"]
         )
+
+
+def test_apply_year_window_filters_both_bounds_inclusively(spark):
+    # s2 and s4 sit exactly on the bounds: this fails if >= becomes > or <= becomes <.
+    rows = [("s1", "1970.0", "10.0", "Technic"), ("s2", "2000.0", "10.0", "Technic"),
+            ("s3", "2005.0", "10.0", "Technic"), ("s4", "2010.0", "10.0", "Technic"),
+            ("s5", "2020.0", "10.0", "Technic")]
+    df = fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"])
+    ids = lambda lo, hi: {r["set_number"] for r in apply_year_window(df, "year_released", lo, hi).collect()}
+
+    assert ids(2000, 2010) == {"s2", "s3", "s4"}
+    assert ids(None, None) == {"s1", "s2", "s3", "s4", "s5"}
+    assert ids(2000, None) == {"s2", "s3", "s4", "s5"}
+    assert ids(None, 2010) == {"s1", "s2", "s3", "s4"}
+
+
+def test_feature_schema_is_identical_across_year_windows(spark):
+    """The schema-churn guard, and it must fail if the vocabulary moves below the window.
+
+    Two disjoint windows whose own top-N themes differ must still produce identical
+    columns, because the vocabulary is derived from the whole dataset. Build the
+    vocabulary after the window instead and the two frames get different columns.
+    """
+    rows = [("s1", "1970.0", "10.0", "Technic"), ("s2", "1970.0", "10.0", "Technic"),
+            ("s3", "2020.0", "10.0", "Ninjago"), ("s4", "2020.0", "10.0", "Ninjago"),
+            ("s5", "2020.0", "10.0", "Friends")]
+    column_params = {
+        "id": "set_number", "target_name": "number_of_parts",
+        "categorical": "theme_name", "top_n_categories": 2,
+        "numeric_features": ["year_released"],
+    }
+    old, old_cols = build_feature_frame(_bronze(spark, rows), column_params, 1949, 1999)
+    new, new_cols = build_feature_frame(_bronze(spark, rows), column_params, 2000, 2023)
+
+    assert old.columns == new.columns
+    assert old_cols == new_cols
+    # Sanity: built per-window, the vocabularies WOULD differ - which is what makes the
+    # equality above meaningful rather than vacuous. Asserted on vocabulary content
+    # rather than row counts, since a fixture edit could preserve the counts while making
+    # both windows share themes, silently making this test vacuous again.
+    old_window = apply_year_window(
+        fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"]), "year_released", 1949, 1999
+    )
+    new_window = apply_year_window(
+        fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"]), "year_released", 2000, 2023
+    )
+    assert build_category_vocabulary(old_window, "theme_name", 2) != \
+        build_category_vocabulary(new_window, "theme_name", 2)
+
+
+def test_build_feature_frame_survives_blank_target_under_ansi(spark):
+    # Casting "" to FLOAT raises CAST_INVALID_INPUT under ANSI. If the cast ever moves
+    # above the drop inside build_feature_frame, this raises instead of filtering.
+    rows = [("001-1", "1965.0", "43.0", "Technic"), ("999-1", "1980.0", "", "Space")]
+    column_params = {
+        "id": "set_number", "target_name": "number_of_parts",
+        "categorical": "theme_name", "top_n_categories": 2,
+        "numeric_features": ["year_released"],
+    }
+    frame, _ = build_feature_frame(_bronze(spark, rows), column_params, None, None)
+
+    assert [r["set_number"] for r in frame.collect()] == ["001-1"]
+
+
+def test_alter_table_with_comments_backticks_generated_columns():
+    """Pins the backtick quoting: theme '4.5V' yields column 4_5V, which is illegal
+    unquoted in ALTER TABLE, and the Other column gets the merged-bucket wording."""
+    class _RecordingSpark:
+        def __init__(self):
+            self.statements = []
+        def sql(self, statement):
+            self.statements.append(statement)
+
+    spark = _RecordingSpark()
+    column_params = {
+        "id": "set_number", "target_name": "number_of_parts",
+        "categorical": "theme_name", "top_n_categories": 100,
+        "numeric_features": ["year_released"],
+    }
+    alter_table_with_comments(spark, "cat.sch.lego_set_features", column_params, ["4_5V", "Other"])
+
+    joined = "\n".join(spark.statements)
+    assert "ALTER COLUMN `4_5V`" in joined
+    assert "ALTER COLUMN `year_released`" in joined
+    # The Other column must document that it merges the source's own Other theme with
+    # everything outside the top N, so 23.4% is not mistaken for the source category.
+    other_statement = next(s for s in spark.statements if "`Other`" in s)
+    assert "top 100" in other_statement
+
+
+def test_optional_year_treats_empty_and_missing_as_unset():
+    # Bundle variables default to "", so the wheel task is invoked with `--min_year=`.
+    # Declaring type=int on the argument makes argparse exit non-zero on that value and
+    # fails the job on every default deployment.
+    assert _optional_year(None) is None
+    assert _optional_year("") is None
+    assert _optional_year("   ") is None
+    assert _optional_year("1999") == 1999
+    assert _optional_year(2010) == 2010

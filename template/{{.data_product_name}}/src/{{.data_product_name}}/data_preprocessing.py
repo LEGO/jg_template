@@ -9,9 +9,10 @@ import pyspark.sql.functions as F
 
 import argparse
 from typing import Dict, List, Tuple
+from omegaconf import OmegaConf
 from common.mlflow_helper import start_mlflow_experiment_and_run
 from common.spark_helper import get_spark_session, upsert_delta_table
-from common.utils import get_logger
+from common.utils import get_logger, load_model_config
 
 logger = get_logger()
 
@@ -21,7 +22,7 @@ The data preprocessing script is compliant with level 2 of https://baseplate.leg
 The data preprocessing script is (arguably) compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/10-mlops-data-monitoring/.
 
 Explanation: 
-Data Preprocessing 1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_genre_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
+Data Preprocessing 1) The data preparation steps are modularized and decoupled from model training, and easily tested, i.e. fix_data_types and create_category_onehot_encodings functions. This allows for parallel execution and reusability of the data preparation steps across different pipelines.
 Data Preprocessing 2) Features are stored in a unity catalog that serves as a "feature store", making them readily available for training and inference.
 Feature Store 1) The unity catalog table is updated on schedule as the model demands, ensuring that the most up-to-date features are available for training and inference.
 Data Monitoring 1) Basic data monitoring is implemented by logging the number of rows preprocessed to MLflow. This allows for tracking changes in the data volume over time, which can be an indicator of data quality issues or changes in the underlying data distribution. However, a production implementation should include much more comprehensive data monitoring, e.g. including monitoring of feature drift, data quality etc.
@@ -168,17 +169,139 @@ def create_category_onehot_encodings(
     return dataframe.drop("_bucketed_category"), encoded_columns
 
 
-def alter_table_with_comments(spark, fully_qualified_feature_table_name, genres) -> None:
-    
-    logger.info("Applying column comments to feature table.")
-    spark.sql(
-        f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN Name COMMENT 'Anime name, used as the primary key.'"
+def apply_year_window(
+    dataframe: DataFrame,
+    year_column: str,
+    min_year: int | None,
+    max_year: int | None,
+) -> DataFrame:
+    """Restricts rows to a release-year window.
+
+    This is the drift-replay lever. Leave both bounds unset for the full dataset; set
+    them to successive eras between runs and the Lakehouse monitor reports real
+    historical drift against the baseline. Apply this AFTER the vocabulary is built.
+    """
+    if min_year is not None:
+        dataframe = dataframe.where(F.col(year_column) >= min_year)
+    if max_year is not None:
+        dataframe = dataframe.where(F.col(year_column) <= max_year)
+    return dataframe
+
+
+def build_feature_frame(
+    dataframe: DataFrame,
+    column_params: dict,
+    min_year: int | None,
+    max_year: int | None,
+) -> Tuple[DataFrame, List[str]]:
+    """Runs the ordered feature pipeline and returns the frame plus its one-hot columns.
+
+    Two orderings here are load-bearing and must not be rearranged:
+
+    1. Invalid rows are dropped BEFORE casting. Under ANSI mode (the default on DBR 17.x)
+       casting "" to FLOAT raises CAST_INVALID_INPUT, so blanks must go while the columns
+       are still text.
+    2. The category vocabulary is built from the WHOLE dataset BEFORE the year window is
+       applied. 188 themes appear only after 2010; a post-window vocabulary would give
+       each drift-replay run a different set of columns, churning the feature-table schema
+       and breaking both the upsert and the Lakehouse monitor.
+    """
+    id_column = column_params["id"]
+    target_name = column_params["target_name"]
+    categorical = column_params["categorical"]
+    numeric_features = column_params["numeric_features"]
+
+    dataframe = drop_invalid_rows(dataframe, id_column=id_column, target_name=target_name)
+    dataframe = fix_data_types(dataframe, target_name=target_name, numeric_features=numeric_features)
+    dataframe = filter_buildable_sets(dataframe, target_name=target_name)
+    dataframe = deduplicate_on_key(dataframe, id_column=id_column)
+
+    # Built from the whole dataset, BEFORE the year window, so the feature schema is
+    # identical across drift-replay runs.
+    vocabulary = build_category_vocabulary(
+        dataframe, categorical=categorical, top_n=column_params["top_n_categories"]
     )
-    spark.sql(f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN Score COMMENT 'Anime review score.'")
-    for genre in genres:
+    logger.info("Category vocabulary size: %s", len(vocabulary))
+
+    # numeric_features[0] is used as the year column by positional convention (see
+    # model_config.yml: numeric_features: ["year_released"]). If a future config ever
+    # prepends a second numeric feature ahead of it, this would silently window on the
+    # wrong column with no error.
+    dataframe = apply_year_window(dataframe, numeric_features[0], min_year, max_year)
+    dataframe, encoded_columns = create_category_onehot_encodings(
+        dataframe, categorical=categorical, vocabulary=vocabulary
+    )
+
+    dataframe = dataframe.select(id_column, target_name, *numeric_features, *encoded_columns)
+    return dataframe, encoded_columns
+
+
+def write_baseline_if_absent(spark, dataframe: DataFrame, baseline_table_name: str) -> bool:
+    """Writes the monitor's reference snapshot once, and never touches it again.
+
+    Create-once is the point: the FIRST pipeline run defines the reference distribution
+    the data monitor compares every later refresh against. Re-baselining is a deliberate
+    act — drop this table.
+
+    Returns:
+        True if the baseline was created by this call, False if it already existed.
+    """
+    if spark.catalog.tableExists(baseline_table_name):
+        logger.info("Baseline table %s already exists; leaving it untouched.", baseline_table_name)
+        return False
+
+    dataframe.write.format("delta").mode("overwrite").saveAsTable(baseline_table_name)
+    logger.info("Created baseline table %s.", baseline_table_name)
+    return True
+
+
+def alter_table_with_comments(
+    spark,
+    fully_qualified_feature_table_name: str,
+    column_params: dict,
+    encoded_columns: List[str],
+) -> None:
+    """Applies column comments to the feature table."""
+    logger.info("Applying column comments to feature table.")
+    table = fully_qualified_feature_table_name
+    categorical = column_params["categorical"]
+    other_label = "Other"
+
+    spark.sql(
+        f"ALTER TABLE {table} ALTER COLUMN {column_params['id']} "
+        "COMMENT 'LEGO set number, used as the primary key.'"
+    )
+    spark.sql(
+        f"ALTER TABLE {table} ALTER COLUMN {column_params['target_name']} "
+        "COMMENT 'Number of parts in the set. Prediction target.'"
+    )
+    for column in column_params.get("numeric_features", []):
         spark.sql(
-            f"ALTER TABLE {fully_qualified_feature_table_name} ALTER COLUMN `{genre}` COMMENT 'One-hot encoded value for genre: {genre}.'"
+            f"ALTER TABLE {table} ALTER COLUMN `{column}` COMMENT 'Numeric feature: {column}.'"
         )
+    for column in encoded_columns:
+        if column == other_label:
+            comment = (
+                f"One-hot encoded {categorical}: the source's own '{other_label}' theme "
+                f"combined with every theme outside the top "
+                f"{column_params['top_n_categories']}."
+            )
+        else:
+            comment = f"One-hot encoded value for {categorical}: {column}."
+        spark.sql(f"ALTER TABLE {table} ALTER COLUMN `{column}` COMMENT '{comment}'")
+
+
+def _optional_year(value: str | None) -> int | None:
+    """Normalises a year CLI argument to an int, or None when unset.
+
+    Bundle variables arrive as strings and default to empty, so the wheel task is invoked
+    with `--min_year=`. Declaring `type=int` on the argument would make argparse exit
+    non-zero on that empty value and fail the job on every default deployment.
+    """
+    if value is None or str(value).strip() == "":
+        return None
+    return int(value)
+
 
 def _parse_args() -> argparse.Namespace:
     """Parses and returns CLI arguments for the ingestion pipeline.
@@ -216,6 +339,24 @@ def _parse_args() -> argparse.Namespace:
         required=True,
         help="Path of the experiment to be used for logging.",
     )
+    parser.add_argument(
+        "--min_year",
+        required=False,
+        default=None,
+        help="Earliest release year to include. Drift-replay lever; empty or omitted means all years.",
+    )
+    parser.add_argument(
+        "--max_year",
+        required=False,
+        default=None,
+        help="Latest release year to include. Drift-replay lever; empty or omitted means all years.",
+    )
+    parser.add_argument(
+        "--baseline_table_name",
+        required=False,
+        default=None,
+        help="Name of the monitor's baseline table. Written once, on the first run.",
+    )
     return parser.parse_args()
 
 
@@ -234,33 +375,59 @@ def main() -> None:
     logger.info("Initializing Spark session.")
     spark = get_spark_session(Path(__file__).stem)
 
+    config_path = Path(__file__).parent / "model" / "model_config.yml"
+    column_params: dict = OmegaConf.to_container(load_model_config(config_path).columns, resolve=True)
+    id_column = column_params["id"]
+
     fully_qualified_data_table_path = args.source_table
     logger.info(f"Reading data from {fully_qualified_data_table_path}")
     dataframe = spark.table(fully_qualified_data_table_path)
     mlflow.log_param("data_source_table", fully_qualified_data_table_path)
 
-    dataframe = fix_data_types(dataframe=dataframe)
-    dataframe, genres = create_genre_onehot_encodings(dataframe=dataframe)
-    mlflow.log_param("preprocessing_steps", [fix_data_types.__name__, 
-                                             create_genre_onehot_encodings.__name__])
+    min_year = _optional_year(args.min_year)
+    max_year = _optional_year(args.max_year)
 
-    dataframe = dataframe.select("Name", "Score", *genres)
+    dataframe, encoded_columns = build_feature_frame(dataframe, column_params, min_year, max_year)
+
+    mlflow.log_param(
+        "preprocessing_steps",
+        [
+            drop_invalid_rows.__name__,
+            fix_data_types.__name__,
+            filter_buildable_sets.__name__,
+            deduplicate_on_key.__name__,
+            apply_year_window.__name__,
+            create_category_onehot_encodings.__name__,
+        ],
+    )
+    mlflow.log_params({"min_year": min_year, "max_year": max_year})
+
     logger.info("Data preprocessing complete. Writing preprocessed data to feature store.")
-    
+
     mlflow.log_input(from_spark(dataframe), context="preprocessed_data")
     mlflow.log_metric("num_rows_preprocessed", dataframe.count()) #NOTE this is a naive implementation of data monitoring and should be much more comprehensive in a production scenario, e.g. including monitoring of feature drift, data quality etc.
 
-    fully_qualified_feature_table_name = f"{args.catalog_name}.{args.schema_name}.{args.feature_store_table_name}"
+    fully_qualified_feature_table_name = (
+        f"{args.catalog_name}.{args.schema_name}.{args.feature_store_table_name}"
+    )
     logger.info(f"Upserting feature table: {fully_qualified_feature_table_name}")
-    upsert_delta_table(spark, dataframe, fully_qualified_feature_table_name, primary_key="Name")
+    upsert_delta_table(spark, dataframe, fully_qualified_feature_table_name, primary_key=id_column)
     mlflow.log_param("feature_table", fully_qualified_feature_table_name)
 
-    ''' 
-    Registering the feature table in the Databricks Feature Store makes the table visible in the Feature Store tab on the Web UI. The underlying table is still a Delta table in the Unity Catalog. 
-    Adding it to the code is optional and can be done with common.spark_helper.register_delta_table_in_feature_store. 
     '''
-     
-    alter_table_with_comments(spark, fully_qualified_feature_table_name, genres)
+    Registering the feature table in the Databricks Feature Store makes the table visible in the Feature Store tab on the Web UI. The underlying table is still a Delta table in the Unity Catalog.
+    Adding it to the code is optional and can be done with common.spark_helper.register_delta_table_in_feature_store.
+    '''
+
+    if args.baseline_table_name:
+        baseline_fqn = f"{args.catalog_name}.{args.schema_name}.{args.baseline_table_name}"
+        created = write_baseline_if_absent(spark, dataframe, baseline_fqn)
+        mlflow.log_param("baseline_table", baseline_fqn)
+        mlflow.log_param("baseline_created_this_run", created)
+
+    alter_table_with_comments(
+        spark, fully_qualified_feature_table_name, column_params, encoded_columns
+    )
 
     mlflow.end_run()
 
