@@ -9,6 +9,7 @@ import ray.data
 import ray.train
 import torch
 from mlflow.models import infer_signature
+from omegaconf import OmegaConf
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from ray.air.integrations.mlflow import MLflowLoggerCallback
@@ -26,14 +27,16 @@ from common.ray_helper import (
     log_ray_result_to_mlflow,
     set_pytorch_checkpoint,
 )
-from common.utils import get_logger
+from common.utils import get_logger, load_model_config
 
 logger = get_logger()
 
+config_path = Path(__file__).parent / "model_config.yml"
+
 
 # Model Definition
-class AnimeScoreNet(nn.Module):
-    """Tiny MLP for predicting anime Score from one-hot genre features."""
+class LegoPartsNet(nn.Module):
+    """Tiny MLP for predicting a LEGO set's number_of_parts from one-hot theme features."""
 
     def __init__(self, input_dim: int, hidden: int = 64, y_mean: float = 0.0):
         super().__init__()
@@ -68,7 +71,7 @@ def train_func_per_worker(config: Dict):
     train_shard = ray.train.get_dataset_shard("train")
     test_shard = ray.train.get_dataset_shard("test")
 
-    model = AnimeScoreNet(input_dim=len(feature_cols), y_mean=y_mean)
+    model = LegoPartsNet(input_dim=len(feature_cols), y_mean=y_mean)
     model = ray.train.torch.prepare_model(model)
 
     loss_fn = nn.MSELoss()
@@ -116,7 +119,7 @@ def train_model(
     epochs: int = 30,
     learning_rate: float = 1e-3,
     global_batch_size: int = 256,
-    storage_path: str = "/dbfs/tmp/ray_results/anime_score_predictor",
+    storage_path: str = "/dbfs/tmp/ray_results/lego_parts_predictor",
 ):
     train_config = {
         "lr": learning_rate,
@@ -165,14 +168,19 @@ def _parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: The parsed command-line arguments.
     """
+    cfg = load_model_config(config_path=config_path)
+    column_params: dict = OmegaConf.to_container(cfg.columns, resolve=True)
+
     parser = argparse.ArgumentParser(description="Run the Ray distributed model training pipeline.")
     parser.add_argument("--catalog", required=True, help="Unity Catalog name.")
     parser.add_argument("--schema", required=True, help="Schema (database) name.")
     parser.add_argument("--feature_store_table_name", required=True, help="Feature store table name.")
     parser.add_argument("--model_name", required=True, help="Registered model name.")
     parser.add_argument("--experiment_path", required=True, help="MLflow experiment path.")
-    parser.add_argument("--target_col", required=False, default="Score", help="Target column name.")
-    parser.add_argument("--id_col", required=False, default="Name", help="ID column name.")
+    parser.add_argument(
+        "--target_col", required=False, default=column_params["target_name"], help="Target column name."
+    )
+    parser.add_argument("--id_col", required=False, default=column_params["id"], help="ID column name.")
     parser.add_argument("--model_alias", required=False, default="champion", help="Alias for the registered model.")
     parser.add_argument("--num_workers", required=False, type=int, default=2, help="Number of Ray training workers.")
     parser.add_argument(
@@ -238,7 +246,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ray_storage_path",
         required=False,
-        default="/dbfs/tmp/ray_results/anime_score_predictor",
+        default="/dbfs/tmp/ray_results/lego_parts_predictor",
         help="Storage path for Ray training results.",
     )
     parser.add_argument(
@@ -393,7 +401,7 @@ def main():
         with model_run.checkpoint.as_directory() as checkpoint_dir:
             state_dict = torch.load(Path(checkpoint_dir) / "model.pt", map_location="cpu")
         input_dim = state_dict["net.0.weight"].shape[1]
-        model = AnimeScoreNet(input_dim=input_dim, y_mean=y_mean)
+        model = LegoPartsNet(input_dim=input_dim, y_mean=y_mean)
         model.load_state_dict(state_dict)
         model.eval()
 

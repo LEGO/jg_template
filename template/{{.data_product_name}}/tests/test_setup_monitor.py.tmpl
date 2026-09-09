@@ -53,7 +53,7 @@ def test_creates_monitor_when_not_found():
     assert kwargs["output_schema_name"] == "cat.sch"
     assert kwargs["assets_dir"] == "/Workspace/monitoring"
     assert kwargs["inference_log"].timestamp_col == "prediction_ts"
-    assert kwargs["inference_log"].prediction_col == "Predicted_Score"
+    assert kwargs["inference_log"].prediction_col == "Predicted_number_of_parts"
     assert kwargs["inference_log"].model_id_col == "model_version"
     assert kwargs["inference_log"].granularities == ["1 day"]
 

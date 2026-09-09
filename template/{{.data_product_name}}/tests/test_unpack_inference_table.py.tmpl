@@ -63,9 +63,9 @@ def test_unpack_explodes_one_row_per_prediction(spark):
     rows = {r["record_id"]: r for r in out.collect()}
 
     assert set(rows) == {"req-1-0", "req-1-1", "req-2-0"}
-    assert rows["req-1-0"]["Predicted_Score"] == pytest.approx(7.5)
-    assert rows["req-1-1"]["Predicted_Score"] == pytest.approx(6.0)
-    assert rows["req-2-0"]["Predicted_Score"] == pytest.approx(8.1)
+    assert rows["req-1-0"]["Predicted_number_of_parts"] == pytest.approx(7.5)
+    assert rows["req-1-1"]["Predicted_number_of_parts"] == pytest.approx(6.0)
+    assert rows["req-2-0"]["Predicted_number_of_parts"] == pytest.approx(8.1)
 
 
 def test_unpack_zips_features_with_predictions_by_position(spark):
@@ -139,13 +139,13 @@ def test_unpack_output_schema(spark):
     assert set(out.columns) == {
         "record_id",
         "prediction_ts",
-        "Predicted_Score",
+        "Predicted_number_of_parts",
         "features",
         "model_version",
     }
     dtypes = dict(out.dtypes)
     assert dtypes["prediction_ts"] == "timestamp"
-    assert dtypes["Predicted_Score"] == "double"
+    assert dtypes["Predicted_number_of_parts"] == "double"
     assert dtypes["features"] == "array<double>"
 
 
@@ -163,7 +163,7 @@ def test_unpack_empty_input_returns_empty_with_schema(spark):
     assert set(out.columns) == {
         "record_id",
         "prediction_ts",
-        "Predicted_Score",
+        "Predicted_number_of_parts",
         "features",
         "model_version",
     }
@@ -184,13 +184,13 @@ def test_empty_unpacked_table_returns_zero_rows_with_correct_schema(spark):
     assert set(out.columns) == {
         "record_id",
         "prediction_ts",
-        "Predicted_Score",
+        "Predicted_number_of_parts",
         "features",
         "model_version",
     }
     dtypes = dict(out.dtypes)
     assert dtypes["record_id"] == "string"
     assert dtypes["prediction_ts"] == "timestamp"
-    assert dtypes["Predicted_Score"] == "double"
+    assert dtypes["Predicted_number_of_parts"] == "double"
     assert dtypes["features"] == "array<double>"
     assert dtypes["model_version"] == "string"

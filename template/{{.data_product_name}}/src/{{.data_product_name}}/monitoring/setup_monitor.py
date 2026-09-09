@@ -23,7 +23,7 @@ def _inference_log() -> MonitorInferenceLog:
         problem_type=MonitorInferenceLogProblemType.PROBLEM_TYPE_REGRESSION,
         timestamp_col="prediction_ts",
         granularities=["1 day"],
-        prediction_col="Predicted_Score",
+        prediction_col="Predicted_number_of_parts",
         model_id_col="model_version",
     )
 

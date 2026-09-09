@@ -57,13 +57,13 @@ def unpack_payload(df: DataFrame) -> DataFrame:
 
     Returns:
         DataFrame with columns ``record_id``, ``prediction_ts`` (timestamp),
-        ``Predicted_Score`` (double), ``features`` (array<double> — the input
+        ``Predicted_number_of_parts`` (double), ``features`` (array<double> — the input
         feature vector for this record), ``model_version`` (str). One row per
         element of ``response.predictions``; ``record_id`` is
         ``"{request_id}-{index}"``. ``model_version`` is the ``served_entity_id``
         (stable per served model version), which the monitor slices drift by.
         The endpoint's request is a bare positional array, so ``features`` carries
-        no per-genre names.
+        no per-theme names.
     """
     parsed = (
         df.filter(F.col("status_code") == 200)
@@ -84,7 +84,7 @@ def unpack_payload(df: DataFrame) -> DataFrame:
     return zipped.select(
         F.concat_ws("-", F.col("_req_id"), F.col("_idx").cast("string")).alias("record_id"),
         F.col("prediction_ts"),
-        F.col("_pair.prediction").cast("double").alias("Predicted_Score"),
+        F.col("_pair.prediction").cast("double").alias("Predicted_number_of_parts"),
         F.col("_pair.features").alias("features"),
         F.col("_model_version").alias("model_version"),
     )
@@ -103,7 +103,7 @@ def empty_unpacked_table(spark: SparkSession) -> DataFrame:
 
     Returns:
         Empty DataFrame with columns ``record_id``, ``prediction_ts``,
-        ``Predicted_Score``, and ``model_version``.
+        ``Predicted_number_of_parts``, and ``model_version``.
     """
     empty_source = spark.createDataFrame([], _PAYLOAD_SCHEMA)
     return unpack_payload(empty_source)

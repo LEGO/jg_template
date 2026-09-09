@@ -2,13 +2,15 @@ from pyspark.sql import DataFrame
 from pathlib import Path
 import pyspark.sql.functions as F
 
-import mlflow 
+import mlflow
 
 import argparse
 
+from omegaconf import OmegaConf
+
 from common.mlflow_helper import start_mlflow_experiment_and_run
 from common.spark_helper import get_spark_session, upsert_delta_table
-from common.utils import get_logger
+from common.utils import get_logger, load_model_config
 
 logger = get_logger()
 
@@ -86,12 +88,25 @@ def main() -> None:
     logger.info(f"Loading model {args.catalog_name}.{args.schema_name}.{args.model_name}@champion from MLflow Model Registry")
     champion_model = mlflow.pyfunc.load_model(model_uri=f"models:/{args.catalog_name}.{args.schema_name}.{args.model_name}@champion")
 
+    config_path = Path(__file__).parent / "model" / "model_config.yml"
+    column_params: dict = OmegaConf.to_container(load_model_config(config_path).columns, resolve=True)
+    id_column = column_params["id"]
+    target_name = column_params["target_name"]
+    prediction_name = column_params["prediction_name"]
+
     #NOTE converting to Pandas for sklearn to work
     pandas_df = dataframe.toPandas()
-    pandas_df["Predicted_Score"] = champion_model.predict(pandas_df.drop(["Name", "Score"], axis=1).to_numpy())
+    pandas_df[prediction_name] = champion_model.predict(
+        pandas_df.drop([id_column, target_name], axis=1).to_numpy()
+    )
     dataframe = spark.createDataFrame(pandas_df)
-    
+
     logger.info(f"Writing batch predictions to {args.catalog_name}.{args.schema_name}.{args.batch_prediction_table}")
-    upsert_delta_table(spark, dataframe, f"{args.catalog_name}.{args.schema_name}.{args.batch_prediction_table}", primary_key="Name")
+    upsert_delta_table(
+        spark,
+        dataframe,
+        f"{args.catalog_name}.{args.schema_name}.{args.batch_prediction_table}",
+        primary_key=id_column,
+    )
 if __name__ == "__main__":
     main()
