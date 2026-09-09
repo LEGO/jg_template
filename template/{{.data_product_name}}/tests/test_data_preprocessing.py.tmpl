@@ -1,0 +1,110 @@
+"""Tests for the LEGO feature-engineering steps (local Spark session)."""
+
+import pytest
+from pyspark.sql import SparkSession
+
+from {{.data_product_name}}.data_preprocessing import (
+    deduplicate_on_key,
+    drop_invalid_rows,
+    filter_buildable_sets,
+    fix_data_types,
+)
+
+BRONZE_COLUMNS = ["set_number", "year_released", "number_of_parts", "theme_name"]
+
+
+@pytest.fixture(scope="module")
+def spark():
+    session = (
+        SparkSession.builder.appName("test_data_preprocessing")
+        .master("local[1]")
+        .config("spark.sql.shuffle.partitions", "1")
+        # DBR 17.x is Spark 4-based and enables ANSI mode by default, whereas local
+        # pyspark 3.5 disables it. Without this, a bad numeric cast passes here and
+        # fails on the cluster.
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    yield session
+    session.stop()
+
+
+def _bronze(spark, rows):
+    """Builds an all-STRING frame, matching the real bronze table's contract."""
+    return spark.createDataFrame(rows, BRONZE_COLUMNS)
+
+
+def test_fix_data_types_casts_decimal_strings(spark):
+    # Bronze stores these as text with a trailing '.0'. Under ANSI mode a direct
+    # string->int cast on "1965.0" RAISES CAST_INVALID_INPUT, so this guards the
+    # double-then-int route. Fails if anyone "simplifies" it to a single cast.
+    df = _bronze(spark, [("001-1", "1965.0", "43.0", "Technic")])
+    out = fix_data_types(df, target_name="number_of_parts", numeric_features=["year_released"]).collect()[0]
+
+    assert out["year_released"] == 1965
+    assert out["number_of_parts"] == pytest.approx(43.0)
+
+
+def test_drop_invalid_rows_removes_theme_only_rows(spark):
+    # Bronze contains 7 rows where every field is empty except theme_name.
+    df = _bronze(spark, [
+        ("001-1", "1965.0", "43.0", "Technic"),
+        ("", "", "", "Pirates"),
+    ])
+    out = drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts")
+
+    assert [r["set_number"] for r in out.collect()] == ["001-1"]
+
+
+def test_drop_invalid_rows_removes_blank_target_with_valid_id(spark):
+    # The optimizer cannot save this row: a valid id means no pushed-down predicate
+    # removes it before the cast. Guards the ANSI CAST_INVALID_INPUT crash directly.
+    df = _bronze(spark, [
+        ("001-1", "1965.0", "43.0", "Technic"),
+        ("999-1", "1980.0", "", "Space"),
+    ])
+    out = drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts")
+
+    assert [r["set_number"] for r in out.collect()] == ["001-1"]
+
+
+def test_blank_rows_are_dropped_before_casting(spark):
+    # Order matters: drop first, then cast. Reversing these raises CAST_INVALID_INPUT
+    # under ANSI mode, which is what the cluster runs.
+    df = _bronze(spark, [
+        ("001-1", "1965.0", "43.0", "Technic"),
+        ("999-1", "1980.0", "", "Space"),
+        ("", "", "", "Pirates"),
+    ])
+    out = fix_data_types(
+        drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts"),
+        target_name="number_of_parts",
+        numeric_features=["year_released"],
+    ).collect()
+
+    assert len(out) == 1
+    assert out[0]["year_released"] == 1965
+    assert out[0]["number_of_parts"] == pytest.approx(43.0)
+
+
+def test_filter_buildable_sets_removes_zero_part_merchandise(spark):
+    df = _bronze(spark, [
+        ("001-1", "1965.0", "43.0", "Technic"),
+        ("kc-1", "2015.0", "0.0", "Key Chain"),
+    ])
+    df = fix_data_types(df, "number_of_parts", ["year_released"])
+    out = filter_buildable_sets(df, target_name="number_of_parts")
+
+    assert [r["set_number"] for r in out.collect()] == ["001-1"]
+
+
+def test_deduplicate_on_key_leaves_one_row_per_id(spark):
+    # upsert_delta_table MERGEs on this key; Delta MERGE fails when several source
+    # rows match one target row.
+    df = _bronze(spark, [
+        ("001-1", "1965.0", "43.0", "Technic"),
+        ("001-1", "1965.0", "43.0", "Technic"),
+    ])
+    out = deduplicate_on_key(df, id_column="set_number")
+
+    assert out.count() == 1
