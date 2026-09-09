@@ -4,10 +4,13 @@ import pytest
 from pyspark.sql import SparkSession
 
 from {{.data_product_name}}.data_preprocessing import (
+    build_category_vocabulary,
+    create_category_onehot_encodings,
     deduplicate_on_key,
     drop_invalid_rows,
     filter_buildable_sets,
     fix_data_types,
+    to_column_name,
 )
 
 BRONZE_COLUMNS = ["set_number", "year_released", "number_of_parts", "theme_name"]
@@ -108,3 +111,92 @@ def test_deduplicate_on_key_leaves_one_row_per_id(spark):
     out = deduplicate_on_key(df, id_column="set_number")
 
     assert out.count() == 1
+
+
+def test_to_column_name_matches_anime_behaviour_for_ordinary_names():
+    # The anime example replaced spaces only; ordinary theme names must come out
+    # byte-identical so the existing naming pattern is preserved.
+    assert to_column_name("Star Wars") == "Star_Wars"
+    assert to_column_name("Technic") == "Technic"
+    assert to_column_name("Classic Town") == "Classic_Town"
+
+
+def test_to_column_name_neutralises_the_dot_hazard():
+    # Theme "4.5V" is inside the top 100. A '.' in a column name is read by Spark as
+    # nested-field access, so select("4.5V") would break.
+    assert to_column_name("4.5V") == "4_5V"
+    assert to_column_name("Bricks & More") == "Bricks_More"
+    assert to_column_name("HO 1:87 Vehicles") == "HO_1_87_Vehicles"
+    assert to_column_name("Spider-Man") == "Spider_Man"
+
+
+def test_build_category_vocabulary_breaks_count_ties_by_name(spark):
+    # The real 100th and 101st themes both have 39 sets, so the tie-break is
+    # load-bearing: without it the feature schema changes between runs.
+    #
+    # NOTE the row order below is deliberate and load-bearing too. "Beta" is inserted
+    # BEFORE "Alpha" so that Spark's own aggregation order disagrees with the expected
+    # result. Insert them alphabetically instead and this test passes even with the
+    # tie-break removed — verified by deleting `.asc()` and seeing it stay green across
+    # local[1] through local[8]. Do not "tidy" these rows into alphabetical order.
+    rows = [("s1", "1990.0", "10.0", "Zebra"), ("s2", "1990.0", "10.0", "Zebra"),
+            ("s3", "1990.0", "10.0", "Beta"), ("s4", "1990.0", "10.0", "Alpha")]
+    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=2)
+
+    # Zebra wins on count (2); Alpha beats Beta on value ascending at 1 each.
+    assert vocabulary[:2] == ["Zebra", "Alpha"]
+
+
+def test_build_category_vocabulary_appends_other_when_absent(spark):
+    rows = [("s1", "1990.0", "10.0", "Technic")]
+    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=1)
+
+    assert vocabulary == ["Technic", "Other"]
+
+
+def test_build_category_vocabulary_does_not_duplicate_a_real_other_theme(spark):
+    # "Other" is a genuine LEGO theme (87 sets, rank 46). When it wins a slot it must
+    # not also be appended.
+    rows = [("s1", "1990.0", "10.0", "Other"), ("s2", "1990.0", "10.0", "Other"),
+            ("s3", "1990.0", "10.0", "Technic")]
+    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=2)
+
+    assert vocabulary.count("Other") == 1
+    assert sorted(vocabulary) == ["Other", "Technic"]
+
+
+def test_create_category_onehot_encodings_is_single_label(spark):
+    rows = [("s1", "1990.0", "10.0", "Star Wars"), ("s2", "1990.0", "10.0", "Technic")]
+    df, columns = create_category_onehot_encodings(
+        _bronze(spark, rows), "theme_name", ["Star Wars", "Technic", "Other"]
+    )
+    out = {r["set_number"]: r for r in df.collect()}
+
+    assert columns == ["Star_Wars", "Technic", "Other"]
+    assert [out["s1"][c] for c in columns] == [1, 0, 0]
+    assert [out["s2"][c] for c in columns] == [0, 1, 0]
+    assert "_bucketed_category" not in df.columns
+
+
+def test_unknown_and_real_other_themes_share_the_other_column(spark):
+    # 188 themes appear only after 2010. They fold into Other alongside the source's
+    # own Other theme - deliberately merged, see spec 5.3.
+    rows = [("s1", "1990.0", "10.0", "Technic"),
+            ("s2", "2015.0", "10.0", "Ninjago"),   # outside the vocabulary
+            ("s3", "2015.0", "10.0", "Other")]     # the real Other theme
+    df, columns = create_category_onehot_encodings(
+        _bronze(spark, rows), "theme_name", ["Technic", "Other"]
+    )
+    out = {r["set_number"]: r for r in df.collect()}
+
+    assert out["s2"]["Other"] == 1
+    assert out["s3"]["Other"] == 1
+    assert out["s1"]["Other"] == 0
+
+
+def test_create_category_onehot_encodings_raises_on_column_collision(spark):
+    rows = [("s1", "1990.0", "10.0", "Bricks & More")]
+    with pytest.raises(ValueError, match="collision"):
+        create_category_onehot_encodings(
+            _bronze(spark, rows), "theme_name", ["Bricks & More", "Bricks More"]
+        )
