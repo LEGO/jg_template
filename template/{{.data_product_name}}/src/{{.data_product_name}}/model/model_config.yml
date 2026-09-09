@@ -1,6 +1,10 @@
-columns: 
-  target_name: "Score"
-  id: "Name"
+columns:
+  target_name: "number_of_parts"
+  id: "set_number"
+  categorical: "theme_name"
+  top_n_categories: 100
+  numeric_features: ["year_released"]
+  prediction_name: "Predicted_number_of_parts"
 default_ada:
   n_estimators: 50
   learning_rate: 1.0
