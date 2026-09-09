@@ -1,13 +1,14 @@
+import re
 from pathlib import Path
 
 import mlflow
 from mlflow.data.spark_dataset import from_spark
 from pyspark.sql import DataFrame
-from pyspark.sql.types import FloatType
+from pyspark.sql.types import DoubleType, FloatType, IntegerType
 import pyspark.sql.functions as F
 
 import argparse
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from common.mlflow_helper import start_mlflow_experiment_and_run
 from common.spark_helper import get_spark_session, upsert_delta_table
 from common.utils import get_logger
@@ -27,10 +28,59 @@ Data Monitoring 1) Basic data monitoring is implemented by logging the number of
 '''
 
 
-def fix_data_types(dataframe: DataFrame) -> DataFrame:
-    """Fixes data types in the source table to ensure compatibility with the feature model training pipeline."""
-    dataframe = dataframe.withColumn("Score", F.col("Score").cast(FloatType()))
+def fix_data_types(dataframe: DataFrame, target_name: str, numeric_features: List[str]) -> DataFrame:
+    """Casts the string-typed bronze columns to numerics.
+
+    Bronze is a faithful raw copy: every column is STRING, and the numeric ones carry a
+    trailing '.0' (e.g. "1965.0").
+
+    Expects drop_invalid_rows to have run first: under ANSI mode — the default on
+    Spark 4 / DBR 17.x, which these clusters run — casting "" to FLOAT raises
+    CAST_INVALID_INPUT, so blank rows must be gone before this runs.
+
+    The integer features go via double deliberately. Under ANSI mode a direct
+    string -> int cast on "1965.0" raises CAST_INVALID_INPUT and fails the job. Do not
+    collapse this into a single cast: it would still pass the unit tests on local
+    pyspark, where ANSI is off.
+    """
+    dataframe = dataframe.withColumn(target_name, F.col(target_name).cast(FloatType()))
+    for column in numeric_features:
+        dataframe = dataframe.withColumn(column, F.col(column).cast(DoubleType()).cast(IntegerType()))
     return dataframe
+
+
+def drop_invalid_rows(dataframe: DataFrame, id_column: str, target_name: str) -> DataFrame:
+    """Drops rows with no usable id or target, while both are still raw text.
+
+    Bronze holds 7 theme-only rows where every field except the theme is blank, and empty
+    bronze fields are empty strings rather than NULL — so both are checked. This must run
+    BEFORE fix_data_types: under ANSI mode (the default on DBR 17.x) casting "" to FLOAT
+    raises CAST_INVALID_INPUT, so invalid rows have to go while the columns are text.
+    """
+    def _present(column: str):
+        return F.col(column).isNotNull() & (F.trim(F.col(column)) != "")
+
+    return dataframe.where(_present(id_column) & _present(target_name))
+
+
+def filter_buildable_sets(dataframe: DataFrame, target_name: str) -> DataFrame:
+    """Keeps only sets that actually contain parts.
+
+    Drops 4,384 LEGO-branded merchandise rows (key chains, books, plush toys) whose true
+    part count is 0. They make the target bimodal and dilute the drift signal.
+    """
+    return dataframe.where(F.col(target_name) > 0)
+
+
+def deduplicate_on_key(dataframe: DataFrame, id_column: str) -> DataFrame:
+    """Leaves one row per id.
+
+    Defensive: with the buildable-sets filter applied there are no duplicates left in
+    this dataset, but ``upsert_delta_table`` MERGEs on this key and Delta MERGE fails
+    when several source rows match one target row — an obscure and expensive failure.
+    """
+    return dataframe.dropDuplicates([id_column])
+
 
 def create_genre_onehot_encodings(dataframe: DataFrame) -> Tuple[DataFrame, List[str]]:
     """Creates genre onehot encodings from the Genre column in the source table."""
