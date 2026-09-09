@@ -94,14 +94,14 @@ pytest tests/
 import mlflow
 
 model = mlflow.pyfunc.load_model(
-    "models:/ai_enablement.general_resources.anime_score_predictor@champion"
+    "models:/my_ml_product.dev_lego_parts_predictor_model.lego_parts_predictor@champion"
 )
 
-# Run a prediction (expects a numpy array of genre features)
+# Run a prediction (expects a numpy array of year + one-hot theme features)
 import numpy as np
-features = np.array([[1, 0, 1, 0, 0, 1, 0, 0]])  # one-hot genre columns
+features = np.array([[2005, 1, 0, 1, 0, 0, 1, 0, 0]])  # year_released, one-hot theme columns
 predictions = model.predict(features)
-print(predictions)  # e.g. [7.42]
+print(predictions)  # e.g. [312.0]
 ```
 
 ### Update the champion alias manually
@@ -113,7 +113,7 @@ client = MlflowClient()
 
 # Promote version 5 to champion
 client.set_registered_model_alias(
-    name="ai_enablement.general_resources.anime_score_predictor",
+    name="my_ml_product.dev_lego_parts_predictor_model.lego_parts_predictor",
     alias="champion",
     version=5,
 )
@@ -128,7 +128,7 @@ client = MlflowClient()
 
 # List all versions of the model
 versions = client.search_model_versions(
-    "name='ai_enablement.general_resources.anime_score_predictor'"
+    "name='my_ml_product.dev_lego_parts_predictor_model.lego_parts_predictor'"
 )
 
 for v in versions:
@@ -143,7 +143,7 @@ for v in versions:
 from common.mlflow_helper import start_mlflow_experiment_and_run
 
 run = start_mlflow_experiment_and_run(
-    experiment_path="/ai_agency/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"
+    experiment_path="/ai_agency/mlops_pipeline/dev/<your_user>/lego_parts_predictor_model_training"
 )
 ```
 
@@ -157,21 +157,21 @@ from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 
 # Inspect raw data
-bronze = spark.read.table("ai_enablement.general_resources.anime_bronze")
+bronze = spark.read.table("ai_agency.general_resource.lego_sets_bronze")
 bronze.printSchema()
 bronze.show(5)
 
 # Inspect feature table
-features = spark.read.table("ai_enablement.general_resources.anime_features")
+features = spark.read.table("my_ml_product.dev_lego_parts_predictor_model.lego_set_features")
 features.printSchema()
 
-# Check genre column distribution
+# Check theme column distribution
 import pyspark.sql.functions as F
-features.select([F.sum(c).alias(c) for c in features.columns if c not in ("Name", "Score")]).show()
+features.select([F.sum(c).alias(c) for c in features.columns if c not in ("set_number", "number_of_parts")]).show()
 
 # Inspect batch predictions
-preds = spark.read.table("ai_enablement.general_resources.anime_score_predictor_batch_predictions")
-preds.select("Name", "Score", "Predicted_Score").show(10)
+preds = spark.read.table("my_ml_product.dev_lego_parts_predictor_model.lego_parts_predictor_batch_predictions")
+preds.select("set_number", "number_of_parts", "Predicted_number_of_parts").show(10)
 ```
 
 ---
@@ -181,36 +181,43 @@ preds.select("Name", "Score", "Predicted_Score").show(10)
 ```python
 import requests
 
-def query_anime_score_endpoint(features: dict, token: str) -> float:
-    """Query the anime score predictor serving endpoint.
-    
+def query_lego_parts_endpoint(features: list[float], token: str) -> float:
+    """Query the LEGO set-size predictor serving endpoint.
+
+    The model is signed as an unnamed tensor (see train_model.py), so the endpoint
+    takes the `inputs` tensor format — a positional feature vector, not a named
+    column format.
+
     Args:
-        features: Dict of genre column names to binary values,
-                  e.g. {"Action": 1, "Comedy": 0, "Sci-Fi": 1, ...}
+        features: Positional feature vector, e.g. [2005, 1, 0, 1, 0, 0, 1, 0, 0].
+                  Values must be in feature-table column order (year_released, then
+                  the one-hot theme columns; id and target columns excluded) and
+                  must have the trained feature count — see serve.py's deployment
+                  log for the exact column order for a given model.
         token: Databricks personal access token
-    
+
     Returns:
-        Predicted anime score as a float.
+        Predicted piece count as a float.
     """
     workspace_url = "https://lego-ssc-dev.cloud.databricks.com"
-    endpoint_name = "anime_score_predictor_endpoint"
+    endpoint_name = "lego_parts_predictor_endpoint"
 
     response = requests.post(
         f"{workspace_url}/serving-endpoints/{endpoint_name}/invocations",
         headers={"Authorization": f"Bearer {token}"},
-        json={"dataframe_records": [features]},
+        json={"inputs": [features]},
     )
 
     response.raise_for_status()
     return response.json()["predictions"][0]
 
 
-# Example usage
-score = query_anime_score_endpoint(
-    features={"Action": 1, "Comedy": 1, "Sci-Fi": 0, "Romance": 0},
+# Example usage: year_released, then one-hot theme columns, positionally
+parts = query_lego_parts_endpoint(
+    features=[2005, 1, 0, 1, 0, 0, 1, 0, 0],
     token="dapi...",
 )
-print(f"Predicted score: {score:.2f}")
+print(f"Predicted parts: {parts:.0f}")
 ```
 
 ---
@@ -225,7 +232,7 @@ If `upsert_delta_table` fails with `DELTA_MERGE_UNRESOLVED_EXPRESSION`, the targ
 dataframe.write.format("delta") \
     .mode("overwrite") \
     .option("overwriteSchema", "true") \
-    .saveAsTable("ai_enablement.general_resources.anime_features")
+    .saveAsTable("my_ml_product.dev_lego_parts_predictor_model.lego_set_features")
 ```
 
 ### Inspect MLflow run parameters and metrics
@@ -237,7 +244,7 @@ client = mlflow.MlflowClient()
 
 # Get the run linked to the champion model version
 model_version = client.get_model_version_by_alias(
-    name="ai_enablement.general_resources.anime_score_predictor",
+    name="my_ml_product.dev_lego_parts_predictor_model.lego_parts_predictor",
     alias="champion",
 )
 run = client.get_run(model_version.run_id)
@@ -258,7 +265,7 @@ databricks bundle run data_preprocessing_job --target dev --profile lego-ssc-dev
 import mlflow
 
 runs = mlflow.search_runs(
-    experiment_names=["/ai_agency/mlops_pipeline/dev/<your_user>/anime_score_predictor_model_training"],
+    experiment_names=["/ai_agency/mlops_pipeline/dev/<your_user>/lego_parts_predictor_model_training"],
     order_by=["start_time DESC"],
     max_results=5,
 )

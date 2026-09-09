@@ -36,8 +36,9 @@ Data preparation, model training, model evaluation + registry (MLflow), continuo
 (tests + workflow), and continuous delivery (the bundle + GitHub Actions). Optional components
 above are included or omitted based on your answers — omitted components leave no files behind.
 
-The generated project contains a working **anime score predictor** example over sandbox data, so
-CI/CD runs immediately; you then edit the example to fit your own data. See the generated project's
+The generated project contains a working **LEGO set-size predictor** example (predicting
+a set's piece count from its theme and release year) over sandbox data, so CI/CD runs
+immediately; you then edit the example to fit your own data. See the generated project's
 own `README.md`.
 
 ## Template layout

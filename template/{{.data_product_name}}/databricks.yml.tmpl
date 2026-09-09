@@ -91,10 +91,24 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
       Fully-qualified raw source table the preprocessing job reads. Decoupled from the
       write schema — may be another team's schema, catalog, etc. Defaults to the shared
       sandbox table so the example runs regardless of the chosen catalog/product name.
-    default: ai_enablement.general_resources.anime_bronze
+    default: ai_agency.general_resource.lego_sets_bronze
   {{.data_product_name}}_feature_store_table_name:
     description: The name of the feature store table
-    default: anime_features
+    default: lego_set_features
+  {{.data_product_name}}_feature_baseline_table:
+    description: >-
+      Reference snapshot the data monitor compares every refresh against. Written once,
+      by the first preprocessing run; drop it to re-baseline.
+    default: ${var.{{.data_product_name}}_feature_store_table_name}_baseline
+  {{.data_product_name}}_min_year:
+    description: >-
+      Earliest set release year to include. Drift-replay lever: leave empty for all
+      years, or set successive windows (e.g. 1949-1999 then 2010-2023) to make the data
+      monitor report real historical drift against the baseline.
+    default: ""
+  {{.data_product_name}}_max_year:
+    description: Latest set release year to include. Empty for all years.
+    default: ""
   {{.data_product_name}}_batch_prediction_table:
     description: The name of the batch prediction table
     default: ${var.{{.data_product_name}}_model_name}_batch_predictions
@@ -103,7 +117,7 @@ variables: #NOTE Defined at the bundle level to be shared across all jobs, and c
     default: ${var.{{.data_product_name}}_model_name}_predictions_unpacked
   {{.data_product_name}}_model_name:
     description: The name of the registered model (example default; rename for your product)
-    default: anime_score_predictor
+    default: lego_parts_predictor
   {{.data_product_name}}_experiment_path:
     description: The path to the mlflow experiment
     default: /${var.team_name}/{{.data_product_name}}/${var.environment}/${workspace.current_user.userName}/${var.{{.data_product_name}}_model_name}

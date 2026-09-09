@@ -17,7 +17,7 @@ license: internal
 
 This template is the paved road for getting an ML project onto Databricks. It is a
 Databricks Asset Bundle that renders a production MLOps project containing only the
-components the user picks, plus a working **anime score predictor** example over
+components the user picks, plus a working **LEGO set-size predictor** example over
 sandbox data so CI/CD runs off the shelf. The user then edits the example toward
 their own data product.
 
@@ -76,7 +76,7 @@ default — set it explicitly.
 **1 — Name (= catalog).** For real deploys it must be a catalog the org actually
 provisions; any valid name works for local rendering. The raw source table is a
 *separate* variable `<name>_source_table`, defaulting to sandbox
-`ai_enablement.general_resources.anime_bronze` — the example runs regardless of
+`ai_agency.general_resource.lego_sets_bronze` — the example runs regardless of
 catalog choice.
 
 **2 — Shared schema name.** Base name of the schema for everything **not** tied to a
@@ -92,7 +92,7 @@ The bundle always deploys two kinds of schema, both prefixed with the environmen
 developer's short username `${workspace.current_user.externalId}` (SCIM corporate id, e.g.
 `dkAndrMo` — *not* `short_name`, which is the full email local part), so a local deploy writes
 to `my_ml_product.dev_dkAndrMo_general_resources.*` and
-`my_ml_product.dev_dkAndrMo_anime_score_predictor_model.*`. If a user has no `externalId`,
+`my_ml_product.dev_dkAndrMo_lego_parts_predictor_model.*`. If a user has no `externalId`,
 `bundle validate` fails on that reference — fall back to `short_name`.
 
 **3 — Ray (the big one).** Default training is single-node scikit-learn on CPU
@@ -144,7 +144,7 @@ Targets: `local` (default; per-user `[short_name]` prefix) and `dev`/`qa`/`prod`
 
 ## Step 4 — Adapt the example
 
-Generated code is anime-specific (target `Score`, id `Name`, genre one-hot).
+Generated code is LEGO-specific (target `number_of_parts`, id `set_number`, theme one-hot).
 Edit in order:
 
 1. `databricks.yml` variables — `<name>_source_table` to the real source; review `catalog`, `schema`, `<name>_model_name`.

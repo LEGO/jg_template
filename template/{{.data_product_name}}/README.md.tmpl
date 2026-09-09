@@ -4,7 +4,7 @@
 # {{.data_product_name}}
 
 An MLOps project on Databricks, scaffolded from the LEGO MLOps template. It ships a working
-example (an anime-score predictor over sandbox data in the `{{.data_product_name}}` catalog) so the
+example (a LEGO set-size predictor over sandbox data in the `{{.data_product_name}}` catalog) so the
 CI/CD wiring runs off the shelf — edit the example scripts to fit your own data product.
 
 ## Components included
@@ -39,7 +39,7 @@ This project was generated with:
 
 ## Adapt to your data product
 
-The example carries anime-specific logic (target column `Score`, id `Name`, genre one-hot). Edit:
+The example carries LEGO-specific logic (target column `number_of_parts`, id `set_number`, theme one-hot). Edit:
 
 - `src/{{.data_product_name}}/data_preprocessing.py` — read your source table, build your features
 - `src/{{.data_product_name}}/model/train_model.py` + `model/model_config.yml` — your model + params
@@ -62,7 +62,7 @@ username comes from `${workspace.current_user.externalId}` (the SCIM-synced corp
 `short_name`, which is the whole email local part.
 
 The raw source table defaults to the shared sandbox
-`ai_enablement.general_resources.anime_bronze` so the example runs off the shelf — point
+`ai_agency.general_resource.lego_sets_bronze` so the example runs off the shelf — point
 `{{.data_product_name}}_source_table` at your own data.
 
 ## Prerequisites

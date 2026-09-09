@@ -68,5 +68,5 @@
       "order": 7
     }
   },
-  "success_message": "\n✨ Project '{{.data_product_name}}' created.\n\nNext steps:\n  cd {{.data_product_name}}\n  uv sync --extra test && uv run pytest -q\n  databricks bundle validate -t local --profile <your-profile>\n\nEdit the example (anime score predictor) data-prep, training, and config to fit your data product."
+  "success_message": "\n✨ Project '{{.data_product_name}}' created.\n\nNext steps:\n  cd {{.data_product_name}}\n  uv sync --extra test && uv run pytest -q\n  databricks bundle validate -t local --profile <your-profile>\n\nEdit the example (LEGO set-size predictor) data-prep, training, and config to fit your data product."
 }

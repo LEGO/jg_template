@@ -6,52 +6,62 @@ This document provides a high-level visualization of data flow through the pipel
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Unity Catalog: anime_bronze                        │
-│  • MAL_ID: string                                   │
-│  • Name: string                                     │
-│  • Score: string                                    │
-│  • Genres: string  (comma-separated)                │
-│  • Synopsis: string                                 │
+│  Unity Catalog: lego_sets_bronze                    │
+│  • set_number: string                               │
+│  • set_name: string                                 │
+│  • year_released: string  (text, trailing '.0')     │
+│  • number_of_parts: string  (text, trailing '.0')   │
+│  • image_url: string                                │
+│  • theme_name: string                               │
 └────────────────────────┬────────────────────────────┘
                          │ spark.table()
                          ▼
 ┌─────────────────────────────────────────────────────┐
 │  STAGE 1: Data Preprocessing                        │
-│  • Cast Score string → float                        │
-│  • Split Genres → one-hot encoded columns           │
-│  • Select: Name, Score, <genre columns>             │
+│  • Drop theme-only / blank id-or-target rows         │
+│  • Cast year_released, number_of_parts → numeric    │
+│  • Filter: number_of_parts > 0 (drop merchandise)   │
+│  • Dedupe on set_number                             │
+│  • Build theme vocabulary (top 100 + Other)         │
+│  • Apply year window (drift-replay lever)           │
+│  • One-hot encode theme_name against the vocabulary │
+│  • Select: set_number, number_of_parts,             │
+│    year_released, <theme columns>                   │
 │  • Log dataset + params to MLflow                   │
-│  • Upsert to feature table (primary key: Name)      │
+│  • Upsert to feature table (primary key: set_number)│
+│  • First run only: write lego_set_features_baseline │
 └────────────────────────┬────────────────────────────┘
                          ▼
 ┌─────────────────────────────────────────────────────┐
-│  Unity Catalog: anime_features                      │
-│  • Name: string                                     │
-│  • Score: float                                     │
-│  • Action: int  (one-hot genre columns)             │
-│  • Comedy: int                                      │
-│  • ...                                              │
-│  • Sci-Fi: int                                      │
-│  • Format: Delta Lake                               │
+│  Unity Catalog: lego_set_features                    │
+│  • set_number: string                               │
+│  • number_of_parts: float                           │
+│  • year_released: int                               │
+│  • Technic: int  (one-hot theme columns)             │
+│  • Star_Wars: int                                    │
+│  • ...                                               │
+│  • Other: int  (residual + source's own Other theme) │
+│  • Format: Delta Lake                                │
 └────────────────────────┬────────────────────────────┘
                          │ spark.read.table()
                          ▼
 ┌─────────────────────────────────────────────────────┐
-│  STAGE 2: Model Training                            │
-│  • Convert to Pandas                                │
-│  • Features: all columns except Name, Score         │
-│  • Target: Score                                    │
-│  • Train/test split: 80/20                          │
-│  • Fit Lasso regression (alpha=1.0, max_iter=1000)  │
-│  • Log RMSE, params, datasets, model to MLflow      │
-│  • Register model → set "champion" alias            │
-└───────────────┬─────────────────┬───────────────────┘
+│  STAGE 2: Model Training                             │
+│  • Convert to Pandas                                 │
+│  • Features: year_released + one-hot theme columns   │
+│  • Target: number_of_parts                           │
+│  • Train/test split: 80/20                           │
+│  • Fit AdaBoostRegressor (n_estimators=50,           │
+│    learning_rate=1.0)                                │
+│  • Log RMSE, params, datasets, model to MLflow       │
+│  • Register model → set "champion" alias             │
+└───────────────┬─────────────────┬────────────────────┘
                 │                 │
                 ▼                 ▼
 ┌──────────────────────┐  ┌───────────────────────────┐
 │  MLflow Registry     │  │  STAGE 3: Model Serving   │
 │  • Model: sklearn    │  │  • Deploy champion model  │
-│    Lasso             │  │    to Databricks endpoint │
+│    AdaBoostRegressor │  │    to Databricks endpoint │
 │  • Alias: "champion" │  │  • Configure permissions  │
 │  • Artifacts:        │  │    and workload size      │
 │    model_config.yml  │  └───────────────────────────┘
@@ -59,23 +69,23 @@ This document provides a high-level visualization of data flow through the pipel
            │ mlflow.pyfunc.load_model(@champion)
            ▼
 ┌─────────────────────────────────────────────────────┐
-│  STAGE 4: Batch Prediction                          │
-│  • Read anime_features                              │
-│  • Sample random subset (n=10, seed=42)             │
-│  • Convert to Pandas, drop Name + Score             │
-│  • Predict scores with champion model               │
-│  • Add Predicted_Score column                       │
-│  • Convert back to Spark                            │
-│  • Upsert to predictions table (primary key: Name)  │
+│  STAGE 4: Batch Prediction                           │
+│  • Read lego_set_features                            │
+│  • Sample random subset (n=10, seed=42)              │
+│  • Convert to Pandas, drop set_number + number_of_parts│
+│  • Predict piece counts with champion model          │
+│  • Add Predicted_number_of_parts column              │
+│  • Convert back to Spark                             │
+│  • Upsert to predictions table (primary key: set_number)│
 └────────────────────────┬────────────────────────────┘
                          ▼
 ┌─────────────────────────────────────────────────────┐
-│  Unity Catalog: anime_score_predictor_batch_predictions │
-│  • Name: string                                     │
-│  • Score: float                                     │
-│  • <genre columns>: int                             │
-│  • Predicted_Score: float                           │
-│  • Format: Delta Lake                               │
+│  Unity Catalog: lego_parts_predictor_batch_predictions│
+│  • set_number: string                               │
+│  • number_of_parts: float                            │
+│  • <theme columns>: int                              │
+│  • Predicted_number_of_parts: float                  │
+│  • Format: Delta Lake                                │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -85,18 +95,20 @@ This document provides a high-level visualization of data flow through the pipel
 CLIENT REQUEST
   │
   │ POST /invocations
-  │ Body: {"dataframe_records": [{"Action": 1, "Comedy": 0, ...}]}
+  │ Body: {"inputs": [[2005, 1, 0, 0, ...]]}
+  │ (unnamed tensor: one row per prediction, values positional —
+  │  year_released, then one-hot theme columns, no field names)
   ▼
 ┌────────────────────────────────────────┐
 │  Databricks Model Serving Endpoint     │
-│  anime_score_predictor_endpoint        │
+│  lego_parts_predictor_endpoint         │
 └────────────────────────────────────────┘
   │
-  └─► Lasso.predict(features) → Predicted_Score (float)
+  └─► AdaBoostRegressor.predict(features) → Predicted_number_of_parts (float)
 
 RESPONSE
 {
-  "predictions": [7.42]
+  "predictions": [312.0]
 }
 ```
 
@@ -105,51 +117,56 @@ RESPONSE
 ### Preprocessing Transformation
 
 ```
-anime_bronze
-  • Score: "7.42"  (string)
-  • Genres: "Action, Comedy, Sci-Fi"
-          ↓ fix_data_types()
-  • Score: 7.42  (float)
-          ↓ create_genre_onehot_encodings()
-  • Action: 1
-  • Comedy: 1
-  • Sci-Fi: 1
-  • Romance: 0
+lego_sets_bronze
+  • year_released: "2005.0"  (string)
+  • number_of_parts: "312.0"  (string)
+  • theme_name: "Technic"
+          ↓ drop_invalid_rows() + fix_data_types()
+  • year_released: 2005  (int)
+  • number_of_parts: 312.0  (float)
+          ↓ filter_buildable_sets()  [number_of_parts > 0]
+          ↓ deduplicate_on_key()
+          ↓ build_category_vocabulary()  [top 100 themes + Other]
+          ↓ apply_year_window()  [drift-replay lever]
+          ↓ create_category_onehot_encodings()
+  • Technic: 1
+  • Star_Wars: 0
+  • Other: 0
   • ...
-          ↓ select(Name, Score, *genres)
-anime_features
-  • Name, Score, <one-hot genre columns>
+          ↓ select(set_number, number_of_parts, year_released, *themes)
+lego_set_features
+  • set_number, number_of_parts, year_released, <one-hot theme columns>
 ```
 
 ### Training Transformation
 
 ```
-anime_features (Spark DataFrame)
+lego_set_features (Spark DataFrame)
           ↓ toPandas()
 Pandas DataFrame
-          ↓ drop Name (id), Score (target)
-X  →  genre feature matrix  [n_samples × n_genres]
-y  →  Score array           [n_samples]
+          ↓ drop set_number (id), number_of_parts (target)
+X  →  year + theme feature matrix  [n_samples × (1 + n_themes)]
+y  →  number_of_parts array         [n_samples]
           ↓ train_test_split(test_size=0.2)
 X_train, X_test, y_train, y_test
-          ↓ Lasso(alpha=1.0).fit(X_train, y_train)
+          ↓ AdaBoostRegressor(n_estimators=50).fit(X_train, y_train)
 Trained model  →  RMSE logged to MLflow
 ```
 
 ### Batch Prediction Transformation
 
 ```
-anime_features (Spark DataFrame)
+lego_set_features (Spark DataFrame)
           ↓ pick_random_subset(n=10, seed=42)
 10-row Spark DataFrame
-          ↓ toPandas() → drop(["Name", "Score"])
-Feature matrix  [10 × n_genres]
+          ↓ toPandas() → drop(["set_number", "number_of_parts"])
+Feature matrix  [10 × (1 + n_themes)]
           ↓ champion_model.predict()
-Predicted_Score array  [10]
+Predicted_number_of_parts array  [10]
           ↓ spark.createDataFrame()
-Spark DataFrame with Predicted_Score column
-          ↓ upsert_delta_table(primary_key="Name")
-anime_score_predictor_batch_predictions (Delta)
+Spark DataFrame with Predicted_number_of_parts column
+          ↓ upsert_delta_table(primary_key="set_number")
+lego_parts_predictor_batch_predictions (Delta)
 ```
 
 ---
