@@ -82,27 +82,90 @@ def deduplicate_on_key(dataframe: DataFrame, id_column: str) -> DataFrame:
     return dataframe.dropDuplicates([id_column])
 
 
-def create_genre_onehot_encodings(dataframe: DataFrame) -> Tuple[DataFrame, List[str]]:
-    """Creates genre onehot encodings from the Genre column in the source table."""
-    # Collect all unique genres
-    all_genres = (
-        dataframe.select(F.explode(F.split(F.col("Genres"), ",")).alias("genre"))
-        .select(F.trim(F.col("genre")).alias("genre"))
-        .distinct()
-        .rdd.flatMap(lambda x: x)
+def to_column_name(value: str) -> str:
+    """Turns a category value into a Spark-safe column name.
+
+    The anime example replaced spaces only. LEGO theme names also contain '.', ':', '&',
+    '-' and '!', and a '.' in a column name is read by Spark as nested-field access — so
+    "4.5V" would break ``DataFrame.select``. Any run of non-alphanumerics therefore
+    collapses to a single underscore. Single-space names ("Star Wars" -> "Star_Wars") are
+    unchanged from the anime behaviour, and capitalisation is preserved; a run of several
+    separators now collapses to one underscore, e.g. "A  B" -> "A_B" (the anime behaviour
+    would have produced "A__B").
+    """
+    return re.sub(r"_+", "_", re.sub(r"[^A-Za-z0-9]+", "_", value.strip())).strip("_")
+
+
+def build_category_vocabulary(
+    dataframe: DataFrame,
+    categorical: str,
+    top_n: int,
+    other_label: str = "Other",
+) -> List[str]:
+    """Returns the ``top_n`` most common category values, plus the residual label.
+
+    Call this on the WHOLE dataset, before any year window is applied. Deriving the
+    vocabulary after windowing would give each drift-replay run a different set of
+    columns — 188 themes appear only after 2010 — churning the feature-table schema and
+    breaking both the upsert and the Lakehouse monitor.
+
+    Ties are broken by value ascending so the vocabulary is reproducible: the real 100th
+    and 101st themes both have 39 sets.
+
+    ``other_label`` is appended only if it did not already win a slot on count. In this
+    dataset it does win one (87 sets, rank 46), and it then absorbs the residual
+    categories as well — the two are deliberately merged.
+    """
+    rows = (
+        dataframe.groupBy(categorical)
+        .count()
+        .orderBy(F.col("count").desc(), F.col(categorical).asc())
+        .limit(top_n)
         .collect()
     )
+    vocabulary = [row[categorical] for row in rows]
+    if other_label not in vocabulary:
+        vocabulary.append(other_label)
+    return vocabulary
 
-    # One-hot encode each genre as a binary column
-    clean_genres = list()
-    for genre in all_genres:
+
+def create_category_onehot_encodings(
+    dataframe: DataFrame,
+    categorical: str,
+    vocabulary: List[str],
+    other_label: str = "Other",
+) -> Tuple[DataFrame, List[str]]:
+    """One-hot encodes ``categorical`` against a fixed vocabulary.
+
+    Values outside the vocabulary map to ``other_label``, so a category never seen at
+    training time degrades gracefully instead of failing at inference.
+
+    Raises:
+        ValueError: If two different category values map to the same column name.
+    """
+    column_names: Dict[str, str] = {}
+    for value in vocabulary:
+        name = to_column_name(value)
+        if name in column_names:
+            raise ValueError(
+                f"Category column collision: {value!r} and {column_names[name]!r} "
+                f"both map to column {name!r}."
+            )
+        column_names[name] = value
+
+    dataframe = dataframe.withColumn(
+        "_bucketed_category",
+        F.when(F.col(categorical).isin(vocabulary), F.col(categorical)).otherwise(F.lit(other_label)),
+    )
+
+    encoded_columns: List[str] = []
+    for name, value in column_names.items():
         dataframe = dataframe.withColumn(
-            genre.strip().replace(" ", "_"),
-            F.when(F.array_contains(F.split(F.col("Genres"), r",\s*"), genre), 1).otherwise(0)
+            name, F.when(F.col("_bucketed_category") == value, 1).otherwise(0)
         )
-        clean_genres.append(genre.strip().replace(" ", "_"))
+        encoded_columns.append(name)
 
-    return dataframe, clean_genres
+    return dataframe.drop("_bucketed_category"), encoded_columns
 
 
 def alter_table_with_comments(spark, fully_qualified_feature_table_name, genres) -> None:
