@@ -86,13 +86,12 @@ def deduplicate_on_key(dataframe: DataFrame, id_column: str) -> DataFrame:
 def to_column_name(value: str) -> str:
     """Turns a category value into a Spark-safe column name.
 
-    The anime example replaced spaces only. LEGO theme names also contain '.', ':', '&',
-    '-' and '!', and a '.' in a column name is read by Spark as nested-field access — so
-    "4.5V" would break ``DataFrame.select``. Any run of non-alphanumerics therefore
-    collapses to a single underscore. Single-space names ("Star Wars" -> "Star_Wars") are
-    unchanged from the anime behaviour, and capitalisation is preserved; a run of several
-    separators now collapses to one underscore, e.g. "A  B" -> "A_B" (the anime behaviour
-    would have produced "A__B").
+    LEGO theme names contain '.', ':', '&', '-' and '!', and a '.' in a column name is
+    read by Spark as nested-field access — so "4.5V" would break ``DataFrame.select``.
+    Any run of non-alphanumerics therefore collapses to a single underscore. A single
+    space becomes an underscore ("Star Wars" -> "Star_Wars"), capitalisation is
+    preserved, and a run of several separators collapses to just one, e.g.
+    "A  B" -> "A_B" rather than "A__B".
     """
     return re.sub(r"_+", "_", re.sub(r"[^A-Za-z0-9]+", "_", value.strip())).strip("_")
 

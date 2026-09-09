@@ -25,6 +25,9 @@ resources:
               source_table: ${var.{{.data_product_name}}_source_table}
               feature_store_table_name: ${var.{{.data_product_name}}_feature_store_table_name}
               experiment_path: ${var.{{.data_product_name}}_experiment_path}_data_preprocessing
+              baseline_table_name: ${var.{{.data_product_name}}_feature_baseline_table}
+              min_year: ${var.{{.data_product_name}}_min_year}
+              max_year: ${var.{{.data_product_name}}_max_year}
 
           job_cluster_key: job_cluster
           libraries:
@@ -43,6 +46,7 @@ resources:
               table_name: ${var.{{.data_product_name}}_feature_store_table_name}
               output_schema_name: ${var.catalog}.${resources.schemas.{{.data_product_name}}_model_schema.name}
               assets_dir: ${var.data_monitoring_assets_dir}
+              baseline_table_name: ${var.{{.data_product_name}}_feature_baseline_table}
           job_cluster_key: job_cluster
           libraries:
             - whl: ../../dist/*.whl

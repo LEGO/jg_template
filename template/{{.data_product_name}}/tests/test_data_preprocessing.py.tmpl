@@ -15,6 +15,7 @@ from {{.data_product_name}}.data_preprocessing import (
     filter_buildable_sets,
     fix_data_types,
     to_column_name,
+    write_baseline_if_absent,
 )
 
 BRONZE_COLUMNS = ["set_number", "year_released", "number_of_parts", "theme_name"]
@@ -76,8 +77,11 @@ def test_drop_invalid_rows_removes_blank_target_with_valid_id(spark):
 
 
 def test_blank_rows_are_dropped_before_casting(spark):
-    # Order matters: drop first, then cast. Reversing these raises CAST_INVALID_INPUT
-    # under ANSI mode, which is what the cluster runs.
+    # Composed-order unit check only: this test calls drop_invalid_rows() then
+    # fix_data_types() itself, in that order, so it stays green even if
+    # build_feature_frame's internal ordering were reversed. The guard on the
+    # production ordering is test_build_feature_frame_survives_blank_target_under_ansi
+    # below, which calls build_feature_frame() directly.
     df = _bronze(spark, [
         ("001-1", "1965.0", "43.0", "Technic"),
         ("999-1", "1980.0", "", "Space"),
@@ -117,9 +121,9 @@ def test_deduplicate_on_key_leaves_one_row_per_id(spark):
     assert out.count() == 1
 
 
-def test_to_column_name_matches_anime_behaviour_for_ordinary_names():
-    # The anime example replaced spaces only; ordinary theme names must come out
-    # byte-identical so the existing naming pattern is preserved.
+def test_to_column_name_preserves_capitalisation_and_underscores_single_spaces():
+    # Ordinary theme names: a single space becomes an underscore and capitalisation
+    # is preserved.
     assert to_column_name("Star Wars") == "Star_Wars"
     assert to_column_name("Technic") == "Technic"
     assert to_column_name("Classic Town") == "Classic_Town"
@@ -266,6 +270,74 @@ def test_build_feature_frame_survives_blank_target_under_ansi(spark):
     frame, _ = build_feature_frame(_bronze(spark, rows), column_params, None, None)
 
     assert [r["set_number"] for r in frame.collect()] == ["001-1"]
+
+
+def test_write_baseline_if_absent_writes_when_table_missing():
+    """The create-once guarantee the whole drift story rests on: when no baseline
+    exists yet, this must write one (overwrite, format=delta) and report True."""
+    class _FakeCatalog:
+        def tableExists(self, name):
+            return False
+
+    class _FakeSpark:
+        def __init__(self):
+            self.catalog = _FakeCatalog()
+
+    class _RecordingWriter:
+        def __init__(self, calls):
+            self._calls = calls
+        def format(self, fmt):
+            self._calls.append(("format", fmt))
+            return self
+        def mode(self, mode):
+            self._calls.append(("mode", mode))
+            return self
+        def saveAsTable(self, name):
+            self._calls.append(("saveAsTable", name))
+
+    class _FakeDataFrame:
+        def __init__(self):
+            self.calls = []
+        @property
+        def write(self):
+            return _RecordingWriter(self.calls)
+
+    spark = _FakeSpark()
+    dataframe = _FakeDataFrame()
+
+    created = write_baseline_if_absent(spark, dataframe, "cat.sch.lego_set_features_baseline")
+
+    assert created is True
+    assert dataframe.calls == [
+        ("format", "delta"),
+        ("mode", "overwrite"),
+        ("saveAsTable", "cat.sch.lego_set_features_baseline"),
+    ]
+
+
+def test_write_baseline_if_absent_leaves_existing_baseline_untouched():
+    """If the baseline already exists, this must NOT write - re-baselining is a
+    deliberate act (drop the table), never a side effect of a later run - and must
+    report False."""
+    class _FakeCatalog:
+        def tableExists(self, name):
+            return True
+
+    class _FakeSpark:
+        def __init__(self):
+            self.catalog = _FakeCatalog()
+
+    class _ExplodingDataFrame:
+        @property
+        def write(self):
+            raise AssertionError("must not write when the baseline already exists")
+
+    spark = _FakeSpark()
+    dataframe = _ExplodingDataFrame()
+
+    created = write_baseline_if_absent(spark, dataframe, "cat.sch.lego_set_features_baseline")
+
+    assert created is False
 
 
 def test_alter_table_with_comments_backticks_generated_columns():
