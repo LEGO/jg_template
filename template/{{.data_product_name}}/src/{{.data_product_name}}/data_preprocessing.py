@@ -254,6 +254,19 @@ def write_baseline_if_absent(spark, dataframe: DataFrame, baseline_table_name: s
     return True
 
 
+def _sql_comment_literal(comment: str) -> str:
+    """Renders comment text as a single-quoted SQL literal, escaping embedded quotes.
+
+    Spark SQL escapes a single quote by doubling it. Comment text is assembled from prose
+    and from category values, and either can contain an apostrophe: the Other column's
+    comment says "the source's own 'Other' theme", and several real LEGO theme names carry
+    one too ("Disney's Mickey Mouse", "Pharaoh's Quest"). An unescaped apostrophe ends the
+    literal early and Spark raises PARSE_SYNTAX_ERROR, which fails the job after the
+    feature table has already been written.
+    """
+    return "'" + comment.replace("'", "''") + "'"
+
+
 def alter_table_with_comments(
     spark,
     fully_qualified_feature_table_name: str,
@@ -266,18 +279,17 @@ def alter_table_with_comments(
     categorical = column_params["categorical"]
     other_label = "Other"
 
-    spark.sql(
-        f"ALTER TABLE {table} ALTER COLUMN {column_params['id']} "
-        "COMMENT 'LEGO set number, used as the primary key.'"
-    )
-    spark.sql(
-        f"ALTER TABLE {table} ALTER COLUMN {column_params['target_name']} "
-        "COMMENT 'Number of parts in the set. Prediction target.'"
-    )
-    for column in column_params.get("numeric_features", []):
+    def _comment(column: str, comment: str) -> None:
+        """Emits one ALTER COLUMN, backticking the identifier and escaping the literal."""
         spark.sql(
-            f"ALTER TABLE {table} ALTER COLUMN `{column}` COMMENT 'Numeric feature: {column}.'"
+            f"ALTER TABLE {table} ALTER COLUMN `{column}` "
+            f"COMMENT {_sql_comment_literal(comment)}"
         )
+
+    _comment(column_params["id"], "LEGO set number, used as the primary key.")
+    _comment(column_params["target_name"], "Number of parts in the set. Prediction target.")
+    for column in column_params.get("numeric_features", []):
+        _comment(column, f"Numeric feature: {column}.")
     for column in encoded_columns:
         if column == other_label:
             comment = (
@@ -287,7 +299,7 @@ def alter_table_with_comments(
             )
         else:
             comment = f"One-hot encoded value for {categorical}: {column}."
-        spark.sql(f"ALTER TABLE {table} ALTER COLUMN `{column}` COMMENT '{comment}'")
+        _comment(column, comment)
 
 
 def _optional_year(value: str | None) -> int | None:

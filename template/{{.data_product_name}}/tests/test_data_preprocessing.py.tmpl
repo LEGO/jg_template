@@ -5,6 +5,7 @@ from pyspark.sql import SparkSession
 
 from {{.data_product_name}}.data_preprocessing import (
     _optional_year,
+    _sql_comment_literal,
     alter_table_with_comments,
     apply_year_window,
     build_category_vocabulary,
@@ -364,6 +365,55 @@ def test_alter_table_with_comments_backticks_generated_columns():
     # everything outside the top N, so 23.4% is not mistaken for the source category.
     other_statement = next(s for s in spark.statements if "`Other`" in s)
     assert "top 100" in other_statement
+
+
+def test_alter_table_with_comments_escapes_quotes_in_comment_text():
+    """Every emitted COMMENT literal must be quote-balanced.
+
+    This is a regression test for a bug that reached a real cluster: the Other column's
+    comment reads "the source's own 'Other' theme", and those apostrophes ended the SQL
+    literal early, so Spark raised PARSE_SYNTAX_ERROR at line 1 pos 149 and failed the job
+    AFTER the feature table and baseline had already been written.
+
+    The sibling test above asserted the comment's *content* but never that the statement
+    was valid SQL, so it passed while emitting a broken statement. This one checks the
+    literal itself: strip the legally-doubled quotes, and no bare quote may remain.
+    """
+    class _RecordingSpark:
+        def __init__(self):
+            self.statements = []
+        def sql(self, statement):
+            self.statements.append(statement)
+
+    spark = _RecordingSpark()
+    column_params = {
+        "id": "set_number", "target_name": "number_of_parts",
+        "categorical": "theme_name", "top_n_categories": 100,
+        "numeric_features": ["year_released"],
+    }
+    # "Disney_s_Mickey_Mouse" stands in for the real themes carrying an apostrophe.
+    alter_table_with_comments(
+        spark, "cat.sch.lego_set_features", column_params, ["4_5V", "Disney_s_Mickey_Mouse", "Other"]
+    )
+
+    assert spark.statements, "no ALTER statements were emitted"
+    for statement in spark.statements:
+        literal = statement.split("COMMENT ", 1)[1]
+        assert literal.startswith("'") and literal.endswith("'"), statement
+        inner = literal[1:-1]
+        assert "'" not in inner.replace("''", ""), f"unescaped quote in: {statement}"
+
+    # The apostrophes in the Other comment must survive as doubled quotes, not vanish.
+    other_statement = next(s for s in spark.statements if "`Other`" in s)
+    assert "source''s" in other_statement
+    assert "''Other''" in other_statement
+
+
+def test_sql_comment_literal_doubles_embedded_quotes():
+    assert _sql_comment_literal("plain") == "'plain'"
+    assert _sql_comment_literal("it's") == "'it''s'"
+    assert _sql_comment_literal("the source's own 'Other' theme") == \
+        "'the source''s own ''Other'' theme'"
 
 
 def test_optional_year_treats_empty_and_missing_as_unset():
