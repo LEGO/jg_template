@@ -63,6 +63,17 @@ def _parse_args() -> argparse.Namespace:
         help="Model alias to point to the logged model version.",
     )
     parser.add_argument(
+        "--databricks_host",
+        required=False,
+        default=None,
+        help=(
+            "Workspace URL used to print the endpoint's invocation URL, e.g. "
+            "https://my-workspace.cloud.databricks.com. Defaults to the SDK's resolved "
+            "host, which on a job cluster can be the canonical dbc-* form rather than "
+            "the vanity URL shown in Unity Catalog."
+        ),
+    )
+    parser.add_argument(
         "--serving_endpoint_name",
         required=True,
         help="Name of the Databricks Model Serving endpoint to create or update.",
@@ -261,9 +272,24 @@ def main() -> None:
             permission_group = args.permission_group,
         )
 
-        # Log endpoint URL. `config.host` already includes the scheme, so don't prepend it.
-        host = workspace_client.config.host.rstrip("/")
+        # Prefer the host passed in from the bundle: on a job cluster the SDK's resolved
+        # host can be the canonical dbc-*.cloud.databricks.com form, which works for API
+        # calls but does not match the vanity URL a user sees on the model in Unity
+        # Catalog. Both include the scheme, so never prepend one.
+        host = (args.databricks_host or workspace_client.config.host).rstrip("/")
         endpoint_url = f"{host}/serving-endpoints/{args.serving_endpoint_name}/invocations"
+
+        # Build a correctly shaped example request. The signature's input shape is the
+        # authority.
+        feature_count = None
+        try:
+            model_info = mlflow.models.get_model_info(
+                f"models:/{args.catalog}.{args.schema}.{args.model_name}@{args.model_alias}"
+            )
+            tensor_spec = model_info.signature.inputs.inputs[0]
+            feature_count = int(tensor_spec.shape[-1])
+        except Exception as e:  # noqa: BLE001 - the URL is still worth printing without it
+            logger.warning(f"Could not read the model signature to size the example request: {e}")
 
         logger.info("Deployment complete!")
         logger.info(f"Endpoint URL: {endpoint_url}")
@@ -277,12 +303,30 @@ def main() -> None:
         # The endpoint therefore takes the `inputs` tensor format, not `dataframe_records`:
         # one list of feature values per row, ordered exactly as the feature table's
         # columns minus the id and target columns.
-        logger.info('    -d \'{"inputs": [[0, 1, 0]]}\'')
-        logger.info("")
-        logger.info(
-            "  NOTE `inputs` rows must be the trained feature count, in feature-table "
-            "column order (id and target columns excluded)."
-        )
+        if feature_count:
+            # year_released first, then the one-hot theme columns: a 2005 Technic-ish set
+            # with the first theme flag set. Values are illustrative; the SHAPE is what
+            # the endpoint enforces.
+            example_row = [2005] + [0] * (feature_count - 1)
+            example_row[1] = 1
+            logger.info(f"    -d '{{\"inputs\": [{example_row}]}}'")
+            logger.info("")
+            logger.info(
+                f"  The model expects exactly {feature_count} values per row, in "
+                "feature-table column order with the id and target columns excluded: "
+                "year_released first, then one column per theme (exactly one set to 1)."
+            )
+            logger.info(
+                "  Get the exact column order with: "
+                f"DESCRIBE TABLE {args.catalog}.{args.schema}.lego_set_features"
+            )
+        else:
+            logger.info('    -d \'{"inputs": [[<one value per feature>]]}\'')
+            logger.info("")
+            logger.info(
+                "  NOTE `inputs` rows must be the trained feature count, in feature-table "
+                "column order (id and target columns excluded)."
+            )
 
     except Exception as e:
         logger.error(f"Deployment failed: {e}")
