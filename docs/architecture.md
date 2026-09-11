@@ -111,7 +111,21 @@ Other: int                 # see note below
 theme, which is itself a miscellaneous category.
 
 **lego_parts_predictor_batch_predictions:** as `lego_set_features`, plus
-`Predicted_number_of_parts: float`.
+`Predicted_number_of_parts: bigint`.
+
+**Why the batch table is an integer and the serving endpoint returns a float.** This
+asymmetry is deliberate, not an oversight. A LEGO set has a whole, non-negative number of
+pieces, so `batch_prediction.py` rounds the regressor's raw output and clips it at zero
+before writing — on the current data a few predictions come out negative, and a set with
+-12 pieces in a curated table is worse than useless. The serving endpoint deliberately
+does **not** round: a regressor's contract is a point estimate on a continuous scale, and
+`204.37` honestly conveys "about 204" where `204` implies precision the model does not
+have. Rounding inside the model would also make one consumer's formatting preference
+everyone's contract, and would degrade the drift monitor specifically — the `InferenceLog`
+monitor computes distribution statistics over `Predicted_number_of_parts`, and quantising
+predictions before it sees them coarsens exactly the signal it exists to track (for small
+sets, rounding to 0 versus 1 is a large *relative* distortion). Callers that want an
+integer round at the point of use.
 
 **lego_parts_predictor_predictions_unpacked:**
 ```
@@ -126,26 +140,42 @@ model_version: string
 
 ## Model Architecture
 
-### AdaBoost Regression
+### HistGradientBoosting Regression
 
-- **Algorithm:** AdaBoost (boosted decision-tree ensemble) via scikit-learn
-- **Target:** `number_of_parts` (piece count of a LEGO set, float)
-- **Features:** `year_released` plus one-hot encoded theme columns (all columns except `set_number` and `number_of_parts`)
+- **Algorithm:** Histogram-based gradient boosting (`HistGradientBoostingRegressor`) via scikit-learn
+- **Target:** `number_of_parts` (piece count of a LEGO set, float; rounded to a non-negative integer for batch predictions)
+- **Features:** `year_released` plus one-hot encoded theme columns (all columns except `set_number` and `number_of_parts`) — 101 features
 - **Config:** [`model_config.yml`](../src/lego_parts_predictor/model/model_config.yml)
   ```yaml
-  columns:
-    target_name: "number_of_parts"
-    id: "set_number"
-    categorical: "theme_name"
-    top_n_categories: 100
-    numeric_features: ["year_released"]
-    prediction_name: "Predicted_number_of_parts"
-  default_ada:
-    n_estimators: 50
-    learning_rate: 1.0
+  default_hgb:
+    max_iter: 200
+    learning_rate: 0.1
+    max_depth: 6
+    min_samples_leaf: 20
+    l2_regularization: 0.0
     random_state: 42
   ```
-- **Metrics logged:** RMSE on 20% holdout test set
+- **Why not AdaBoost:** the example originally used `AdaBoostRegressor`, which on this data
+  is the only model measured that performs *worse than predicting a constant*. AdaBoost.R2
+  reweights toward the examples it fits worst — here the handful of 5,000-11,695-piece sets
+  — dragging every prediction upward. Measured on the same 20% holdout (seed 42):
+
+  | Model | RMSE | vs baseline |
+  |---|---|---|
+  | predict the training mean | 476 | — |
+  | AdaBoost `n_estimators=50, lr=1.0` | 530 | +11% (worse) |
+  | AdaBoost `n_estimators=200, lr=0.05` | 579 | +22% (tuning made it worse) |
+  | RandomForest `n=300` | 452 | −5% |
+  | Ridge `alpha=1.0` | 441 | −7% |
+  | **HistGradientBoosting** | **431** | **−9%** |
+
+  A log-transformed target reaches a better MAE (157 vs 184) but a worse RMSE, and would
+  require inverse-transforming in training, batch prediction and serving — so the target
+  is left untransformed.
+
+- **Metrics logged:** `rmse`, plus `baseline_rmse` (predict-the-mean) and
+  `skill_vs_baseline` on a 20% holdout, so a model with negative skill is visible rather
+  than hidden behind a lone RMSE figure
 - **Registry:** MLflow Model Registry (Unity Catalog) with `champion` alias
 
 ---
