@@ -2,7 +2,7 @@ import argparse
 import mlflow
 from mlflow.data.numpy_dataset import from_numpy
 from mlflow.models import infer_signature
-from sklearn.ensemble import AdaBoostRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 import numpy as np
 from pyspark.sql import DataFrame
 from sklearn.model_selection import train_test_split
@@ -79,20 +79,20 @@ def _load_model_config_from_hyperparameter_tuning(experiment_path: str) -> dict:
     raise ValueError(f"No tuning runs with 'best_' parameters found in experiment: {experiment_path}")
 
 
-def setup_parameters(hyperparameter_experiment_path: str | None, ada_params: dict) -> AdaBoostRegressor:
+def setup_parameters(hyperparameter_experiment_path: str | None, model_params: dict) -> tuple:
     cfg = load_model_config(config_path=config_path)
 
     if hyperparameter_experiment_path:
         try:
-            ada_params = _load_model_config_from_hyperparameter_tuning(hyperparameter_experiment_path)
+            model_params = _load_model_config_from_hyperparameter_tuning(hyperparameter_experiment_path)
         except Exception as e:
             logger.warning(f"Failed to load hyperparameters from tuning experiment, falling back to defaults. Error: {e}")
-            ada_params: dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
+            model_params: dict = OmegaConf.to_container(cfg.default_hgb, resolve=True)
     else:
-        ada_params: dict = OmegaConf.to_container(cfg.default_ada, resolve=True)
+        model_params: dict = OmegaConf.to_container(cfg.default_hgb, resolve=True)
     column_params: dict = OmegaConf.to_container(cfg.columns, resolve=True)
-    
-    return column_params, ada_params
+
+    return column_params, model_params
 
 def prepare_data(dataframe: DataFrame, column_params: dict) -> tuple:
     logger.info("Preparing data for training")
@@ -121,7 +121,7 @@ def train_model(
     hyperparameter_experiment_path: str | None = None,
 ) -> None:
     """
-    Trains an AdaBoost model using the provided DataFrame and logs the model and metrics to MLflow.
+    Trains a HistGradientBoosting model using the provided DataFrame and logs the model and metrics to MLflow.
 
     Args:
         dataframe (DataFrame): The input DataFrame containing features and target.
@@ -133,8 +133,8 @@ def train_model(
     
     start_mlflow_experiment_and_run(experiment_path)
     
-    column_params, ada_params = setup_parameters(hyperparameter_experiment_path, ada_params={})
-    model = AdaBoostRegressor(**ada_params)
+    column_params, model_params = setup_parameters(hyperparameter_experiment_path, model_params={})
+    model = HistGradientBoostingRegressor(**model_params)
     
     X_train, X_test, y_train, y_test = prepare_data(dataframe, column_params)
 
@@ -143,10 +143,23 @@ def train_model(
     preds = model.predict(X_test)
     signature = infer_signature(X_train, preds)
     rmse = np.sqrt(mean_squared_error(y_test, preds))
-    logger.info(f"RMSE: {rmse:.4f}")
 
-    mlflow.log_metrics({"rmse": rmse})
-    mlflow.log_params(ada_params)
+    # Predicting the training mean for every row is the dumbest possible model, so its
+    # RMSE is the bar the trained model has to clear. Logged alongside so the comparison
+    # is explicit in MLflow: an `rmse` above `baseline_rmse` means the model has negative
+    # skill, which a lone RMSE figure hides completely. The Ray path logs the same metric.
+    baseline_rmse = float(np.sqrt(mean_squared_error(y_test, np.full_like(y_test, y_train.mean(), dtype=float))))
+    skill = 1.0 - (rmse / baseline_rmse) if baseline_rmse else 0.0
+    logger.info(f"RMSE: {rmse:.4f}  (predict-the-mean baseline = {baseline_rmse:.4f})")
+    if rmse >= baseline_rmse:
+        logger.warning(
+            "Trained model does NOT beat the predict-the-mean baseline "
+            f"({rmse:.1f} vs {baseline_rmse:.1f}). The target is heavily right-skewed, so "
+            "squared-error learners are dominated by a few very large sets."
+        )
+
+    mlflow.log_metrics({"rmse": rmse, "baseline_rmse": baseline_rmse, "skill_vs_baseline": skill})
+    mlflow.log_params(model_params)
 
     mlflow.log_artifact(str(Path(__file__).parent / "model_config.yml"), artifact_path="model_config")
 
