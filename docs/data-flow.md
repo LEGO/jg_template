@@ -51,8 +51,8 @@ This document provides a high-level visualization of data flow through the pipel
 │  • Features: year_released + one-hot theme columns   │
 │  • Target: number_of_parts                           │
 │  • Train/test split: 80/20                           │
-│  • Fit AdaBoostRegressor (n_estimators=50,           │
-│    learning_rate=1.0)                                │
+│  • Fit HistGradientBoostingRegressor                │
+│    (max_iter=200, learning_rate=0.1, max_depth=6)   │
 │  • Log RMSE, params, datasets, model to MLflow       │
 │  • Register model → set "champion" alias             │
 └───────────────┬─────────────────┬────────────────────┘
@@ -60,8 +60,8 @@ This document provides a high-level visualization of data flow through the pipel
                 ▼                 ▼
 ┌──────────────────────┐  ┌───────────────────────────┐
 │  MLflow Registry     │  │  STAGE 3: Model Serving   │
-│  • Model: sklearn    │  │  • Deploy champion model  │
-│    AdaBoostRegressor │  │    to Databricks endpoint │
+│  • Model (sklearn):  │  │  • Deploy champion model  │
+│  HistGradientBoosting│  │    to Databricks endpoint │
 │  • Alias: "champion" │  │  • Configure permissions  │
 │  • Artifacts:        │  │    and workload size      │
 │    model_config.yml  │  └───────────────────────────┘
@@ -104,7 +104,7 @@ CLIENT REQUEST
 │  lego_parts_predictor_endpoint         │
 └────────────────────────────────────────┘
   │
-  └─► AdaBoostRegressor.predict(features) → Predicted_number_of_parts (float)
+  └─► HistGradientBoostingRegressor.predict(features) → Predicted_number_of_parts (float)
 
 RESPONSE
 {
@@ -149,7 +149,7 @@ X  →  year + theme feature matrix  [n_samples × (1 + n_themes)]
 y  →  number_of_parts array         [n_samples]
           ↓ train_test_split(test_size=0.2)
 X_train, X_test, y_train, y_test
-          ↓ AdaBoostRegressor(n_estimators=50).fit(X_train, y_train)
+          ↓ HistGradientBoostingRegressor(max_iter=200).fit(X_train, y_train)
 Trained model  →  RMSE logged to MLflow
 ```
 

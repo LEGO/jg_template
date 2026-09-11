@@ -118,7 +118,7 @@ def tune_model_ray(
             mode="min",
         ),
         run_config=RunConfig(
-            name="ray_tune_adaboost",
+            name="ray_tune_histgradientboosting",
             callbacks=[
                 MLflowLoggerCallback(
                     experiment_name=experiment_path,

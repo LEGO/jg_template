@@ -32,7 +32,7 @@ Four sequential stages:
 ### 2. Model Training
 - **Entry:** [`train_model.py`](../src/lego_parts_predictor/model/train_model.py)
 - **Job:** [`model_training.yml`](../resources/model_training.yml)
-- Trains an AdaBoost regression model on the year and one-hot theme features to predict a set's piece count. Logs parameters, metrics, and the model artifact to MLflow. Registers the model and sets the `champion` alias.
+- Trains a HistGradientBoosting regression model on the year and one-hot theme features to predict a set's piece count. Logs parameters, metrics, and the model artifact to MLflow. Registers the model and sets the `champion` alias.
 - **Cluster:** CPU (i3.2xlarge, Runtime 17.3.x ML CPU)
 - **Schedule:** Weekly, Mondays 06:00 CET
 - **Output:** Registered model in MLflow Registry with `champion` alias
@@ -308,7 +308,7 @@ deliberately.
 | **Platform**        | Databricks                 |
 | **Compute**         | Apache Spark               |
 | **Storage**         | Unity Catalog (Delta Lake) |
-| **ML Framework**    | scikit-learn (AdaBoost)    |
+| **ML Framework**    | scikit-learn (HistGradientBoosting) |
 | **Model Serving**   | Databricks Model Serving   |
 | **ML Tracking**     | MLflow                     |
 | **Config**          | OmegaConf (YAML)           |
@@ -331,5 +331,5 @@ databricks-connect = ">=15.4,<15.5"
 
 - [Databricks Bundles](https://docs.databricks.com/en/dev-tools/bundles/index.html)
 - [MLflow Model Registry](https://mlflow.org/docs/latest/model-registry.html)
-- [scikit-learn AdaBoostRegressor](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.AdaBoostRegressor.html)
+- [scikit-learn HistGradientBoostingRegressor](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingRegressor.html)
 - [OmegaConf](https://omegaconf.readthedocs.io/)
