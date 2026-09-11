@@ -11,7 +11,7 @@ from ray import tune
 from ray.air import RunConfig
 from ray.tune.search.optuna import OptunaSearch
 from ray.air.integrations.mlflow import MLflowLoggerCallback
-from sklearn.ensemble import AdaBoostRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_squared_error
 
 from common.mlflow_helper import set_champion_alias_on_logged_model, start_mlflow_experiment_and_run
@@ -34,13 +34,25 @@ def _build_search_space(tuning_params: dict) -> dict:
         Dict of Ray Tune search space definitions.
     """
     return {
-        "n_estimators": tune.randint(
-            tuning_params["n_estimators"]["low"],
-            tuning_params["n_estimators"]["high"] + 1,
+        "max_iter": tune.randint(
+            tuning_params["max_iter"]["low"],
+            tuning_params["max_iter"]["high"] + 1,
         ),
         "learning_rate": tune.loguniform(
             tuning_params["learning_rate"]["low"],
             tuning_params["learning_rate"]["high"],
+        ),
+        "max_depth": tune.randint(
+            tuning_params["max_depth"]["low"],
+            tuning_params["max_depth"]["high"] + 1,
+        ),
+        "min_samples_leaf": tune.randint(
+            tuning_params["min_samples_leaf"]["low"],
+            tuning_params["min_samples_leaf"]["high"] + 1,
+        ),
+        "l2_regularization": tune.uniform(
+            tuning_params["l2_regularization"]["low"],
+            tuning_params["l2_regularization"]["high"],
         ),
         "random_state": tuning_params["random_state"]["fixed"],
     }
@@ -52,7 +64,7 @@ def tune_model_ray(
     experiment_path: str,
     model_alias: str = "champion",
 ) -> None:
-    """Runs Ray Tune hyperparameter search for AdaBoostRegressor using OptunaSearch.
+    """Runs Ray Tune hyperparameter search for HistGradientBoostingRegressor using OptunaSearch.
 
     Each trial is logged as a nested MLflow child run via MLflowLoggerCallback.
     After the sweep, the best parameters are used to train a final model which
@@ -79,10 +91,13 @@ def tune_model_ray(
     mlflow.log_param("n_trials", n_trials)
 
     def trainable(config: dict) -> None:
-        """Ray Tune trainable: trains one AdaBoost trial and reports RMSE."""
-        model = AdaBoostRegressor(
-            n_estimators=config["n_estimators"],
+        """Ray Tune trainable: trains one HistGradientBoosting trial and reports RMSE."""
+        model = HistGradientBoostingRegressor(
+            max_iter=config["max_iter"],
             learning_rate=config["learning_rate"],
+            max_depth=config["max_depth"],
+            min_samples_leaf=config["min_samples_leaf"],
+            l2_regularization=config["l2_regularization"],
             random_state=config["random_state"],
         )
         model.fit(X_train, y_train)
@@ -124,7 +139,7 @@ def tune_model_ray(
 
     logger.info("Training final model with best parameters.")
     final_params = {**best_params, "random_state": 42}
-    final_model = AdaBoostRegressor(**final_params)
+    final_model = HistGradientBoostingRegressor(**final_params)
     final_model.fit(X_train, y_train)
     final_preds = final_model.predict(X_test)
     signature = infer_signature(X_train, final_preds)
