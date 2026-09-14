@@ -57,6 +57,27 @@ Four sequential stages:
 - **Output:** `lego_parts_predictor_predictions_unpacked` Delta table + managed monitor assets
 - **Scope:** Prediction drift only; input-feature drift is handled separately.
 
+**Known limitations — this job cannot be demonstrated in one sitting.** Unlike the data-drift
+replay above, prediction drift needs real endpoint traffic accumulated over time:
+
+- **No traffic means an empty table, not a failure.** The `<endpoint>_payload` table is created
+  by AI Gateway only on its first flush after a real request, so on a fresh endpoint
+  `unpack_inference_table` logs "does not exist yet (no traffic)" and writes an empty
+  `*_predictions_unpacked` table so `setup_monitor` has a target. The job goes green having
+  monitored nothing.
+- **Payload logging is asynchronous** and lazily creates the table — allow up to an hour after
+  the first request, not minutes.
+- **Failed requests are invisible.** Rows with `status_code != 200` are dropped, so a request
+  rejected for the wrong input shape never becomes a monitored prediction. The model is signed
+  as an unnamed tensor, so the body must be `{"inputs": [[...]]}` with exactly one value per
+  feature (101 in this example) in feature-table column order, id and target excluded.
+- **Drift needs two windows.** `granularities=["1 day"]` puts every request made on the same
+  day into one window, and drift is a comparison between windows — so traffic must span at
+  least two days before the drift columns populate. There is no equivalent of the year-window
+  replay for this; faking it would mean fabricating `prediction_ts` values.
+
+For a same-session demonstration of drift, use the feature-table replay above.
+
 ---
 
 ## Data Architecture
