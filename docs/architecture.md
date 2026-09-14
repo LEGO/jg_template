@@ -242,39 +242,45 @@ Training → Log model → Register → Set alias ("champion")
 
 ## Demonstrating data drift
 
-The dataset is a static snapshot, but it spans 1949–2023 and LEGO sets changed a great
-deal over that time. Replaying history through the year window produces real drift with
-no synthetic noise.
+The dataset is a static 2023 snapshot, but it spans 1949–2023 and LEGO sets changed a great
+deal over that period. Replaying those eras through the preprocessing job's year window
+produces real, measurable drift with no synthetic noise.
 
-The first preprocessing run writes `lego_set_features_baseline`, and the data monitor
-compares every later refresh against it. **That is only true if this replay is the
-first run.** If the weekly schedule already fired once with the default empty window
-(all years), the baseline is already the full 1949–2023 dataset, and every window below
-is a subset of it — the replay will show no drift. Drop `lego_set_features_baseline`
-first if that has happened.
+### 1. Reset both tables first
 
-`min_year`/`max_year` are `python_wheel_task.named_parameters`, not job parameters, and
-no job in `resources/` declares a job-level `parameters:` block — so `bundle run
---params` cannot reach them (`--params` is documented as job parameters, a different
-mechanism from Job Task Flags). Named parameters are baked in at deploy time from bundle
-variables, so the window has to move by redeploying with `--var`, then running:
+The feature table is written with a `MERGE`, which inserts and updates but **never deletes** —
+so a narrower year window cannot shrink a table that already holds more rows. If the pipeline
+has ever run with the default empty window, drop both tables or every step below will change
+nothing:
 
-**Substitute your own data product name.** These variables are named
-`<data_product_name>_min_year` / `_max_year`, where `<data_product_name>` is the value you
-answered the first `bundle init` prompt with — the same string as your project directory and
-Python package, with underscores. Copying the placeholder verbatim fails with
-`Error: variable <data_product_name>_min_year has not been defined`. Confirm the exact names
-with `grep _min_year databricks.yml` in your generated project.
+```sql
+DROP TABLE <catalog>.<schema>.lego_set_features;
+DROP TABLE <catalog>.<schema>.lego_set_features_baseline;
+```
+
+Dropping the baseline alone is not enough: it is written from the in-memory windowed frame, so
+it stays correct while the feature table goes stale. Then delete the monitor so the pipeline
+recreates it against the new table:
 
 ```bash
-# 1. Baseline era. Deploying with these variables set bakes them into the task's
-#    named_parameters; the run that follows also creates the baseline table (only if
-#    one doesn't already exist — see above).
+databricks quality-monitors delete <catalog>.<schema>.lego_set_features --profile <profile>
+```
+
+### 2. Move the window, one era at a time
+
+`min_year`/`max_year` are `python_wheel_task.named_parameters`, baked in at deploy time, so
+`bundle run --params` cannot reach them — the window moves by redeploying with `--var`. The
+variables are named `<data_product_name>_min_year` / `_max_year`; confirm yours with
+`grep _min_year databricks.yml`, since a wrong name fails with `variable ... has not been
+defined`.
+
+```bash
+# 1. Baseline era. This run also creates the baseline table.
 databricks bundle deploy -t local --var="catalog=<your_catalog>" \
   --var="<data_product_name>_min_year=1949" --var="<data_product_name>_max_year=1999"
 databricks bundle run data_preprocessing_job -t local
 
-# 2. Advance the window, redeploy, and re-run. The monitor now reports drift vs the baseline.
+# 2. Advance the window, redeploy, re-run.
 databricks bundle deploy -t local --var="catalog=<your_catalog>" \
   --var="<data_product_name>_min_year=2000" --var="<data_product_name>_max_year=2009"
 databricks bundle run data_preprocessing_job -t local
@@ -286,29 +292,56 @@ databricks bundle run data_preprocessing_job -t local
 ```
 
 `catalog` defaults to your data product name and the bundle creates schemas but **not** the
-catalog, so `<your_catalog>` must already exist in Unity Catalog. Drop the flag only if a
-catalog named exactly after your data product already exists.
+catalog, so `<your_catalog>` must already exist. Each monitor refresh takes about 7 minutes,
+so wait before checking results.
 
-Verified: the variables do resolve into the task's named parameters — running
-`databricks bundle validate -t local --var="<data_product_name>_min_year=1949" --output json`
-against a rendered project and inspecting the resolved `data_processing` task shows
-`min_year` as `'1949'`, versus `''` with no `--var` flag passed. The full
-deploy-and-run cycle above has not been executed end-to-end against a real workspace.
+### 3. Where to look for the drift
 
-Mean parts per set moves roughly 106 → 137 → 204 across those refreshes (1.93× against
-the baseline), and the theme mix shifts sharply — Classic Town 8.8% → 0.0%, Star Wars
-0.3% → 5.6%.
+**In the monitoring dashboard:** the `Numerical Distribution Change` section, using
+*Filter by Column Name* → `number_of_parts` (the profile tables run to 13 pages of theme
+columns otherwise). `Row Count Over Time` should step 4,473 → 8,191 → 17,112, and after a
+clean reset the default consecutive-refresh comparison shows drift without editing any widget.
 
-The feature table accumulates because the write is a MERGE, which is the correct
-behaviour for a feature store. The fixed baseline is what keeps drift visible and
-repeatable. To reset, drop `lego_set_features_baseline`.
+**In SQL**, which is unambiguous and needs no navigation:
 
-**Known limitations of the example:** the dataset is a static 2023 snapshot (Rebrickable
-is the upstream refresh path if a live source is ever wanted); the target is heavily
-right-skewed (median 54, mean 204, max 11,695), so RMSE is dominated by a few very large
-sets; `Other` is a large 23.4% bucket; the model is undefined for zero-part merchandise,
-which is filtered out; and drift only appears when the year window is moved
-deliberately.
+```sql
+-- Distribution per refresh. log_type='BASELINE' is the reference; 'INPUT' rows are refreshes.
+SELECT window.start, log_type, count, round(avg,2) AS avg_parts
+FROM <catalog>.<schema>.lego_set_features_profile_metrics
+WHERE column_name = 'number_of_parts' AND slice_key IS NULL ORDER BY window.start;
+
+-- Drift. BASELINE compares to the fixed reference; CONSECUTIVE to the previous refresh.
+SELECT window.start, drift_type, count_delta, round(avg_delta,2) AS avg_delta,
+       round(wasserstein_distance,2) AS wass, ks_test.pvalue AS ks_p
+FROM <catalog>.<schema>.lego_set_features_drift_metrics
+WHERE column_name = 'number_of_parts' AND slice_key IS NULL ORDER BY window.start;
+```
+
+Measured on a live workspace after the three steps above:
+
+| Step | Rows | Mean parts | `avg_delta` vs baseline | Wasserstein | KS p-value |
+|---|---|---|---|---|---|
+| 1 · 1949–1999 | 4,473 | 105.90 | 0.00 | 0.00 | 1.0 |
+| 2 · +2000–2009 | 8,191 | 137.27 | +31.37 | 31.56 | 2.9e-4 |
+| 3 · +2010–2023 | 17,112 | 204.08 | **+98.19** | 99.24 | **0.0** |
+
+Step 1 correctly shows zero — baseline and current are the same snapshot. The theme mix
+shifts sharply too (Classic Town 8.8% → 0.0%, Star Wars 0.3% → 5.6%); use `js_distance` for
+those, since it is `NULL` for numeric columns and `wasserstein_distance` is `NULL` for
+categorical ones.
+
+### Two things to ignore
+
+`set_number` is always flagged in the categorical section: Lakehouse Monitoring profiles every
+column with no exclusion option, and a primary key's values are unique by definition, so its
+chi-squared test always reports significance (p ~ 1e-12). On a fresh monitor it can be the
+only flagged column, which reads like a finding and is not.
+
+**Known limitations of the example:** the dataset is a static 2023 snapshot (Rebrickable is
+the upstream refresh path if a live source is ever wanted); the target is heavily right-skewed
+(median 54, mean 204, max 11,695), so RMSE is dominated by a few very large sets; `Other` is a
+large 23.4% bucket; the model is undefined for the zero-part merchandise that is filtered out;
+and drift only appears when the year window is moved deliberately.
 
 ---
 
