@@ -72,6 +72,11 @@ def setup_monitor(
         baseline_table_name: Fully-qualified reference table. With a baseline, every
             refresh is compared against a fixed distribution instead of only against the
             previous refresh, so drift is monotonic and persistent.
+
+    NOTE Lakehouse Monitoring profiles every column and the API offers no way to exclude
+    one, so the primary key is monitored too. Because its values are unique by definition,
+    its distribution "changes" on every refresh and the chi-squared test always reports
+    significance (p ~ 1e-12) -- expect the id column to be flagged, and ignore it.
     """
     try:
         workspace_client.quality_monitors.create(
