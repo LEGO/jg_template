@@ -161,7 +161,7 @@ the reason to use the template.
 ## Step 5 — Deploy (only when asked, local/dev first)
 
 ```bash
-databricks bundle deploy -t local --profile <profile>
+databricks bundle deploy -t local --profile <profile> --var="catalog=<your_catalog>"
 databricks bundle run <job_name> -t local --profile <profile>
 ```
 

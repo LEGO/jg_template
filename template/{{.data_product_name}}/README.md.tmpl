@@ -85,7 +85,7 @@ databricks bundle validate -t local --profile <your-profile>
 ## Deploy & run
 
 ```bash
-databricks bundle deploy -t local --profile <your-profile>
+databricks bundle deploy -t local --profile <your-profile> --var="catalog=<your_catalog>"
 databricks bundle run model_training_job -t local --profile <your-profile>
 ```
 

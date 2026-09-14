@@ -2,6 +2,13 @@
 
 Practical examples and recipes for working with the MLOps pipeline.
 
+> **Substitute your own names.** The snippets below use `my_ml_product` as the catalog and
+> `dev_lego_parts_predictor_model` as the schema, which are the template's *default* example
+> values. Your catalog is whatever you set the `catalog` bundle variable to (it defaults to
+> your data product name), and your schema carries your own `schema_prefix` — on the `local`
+> target that includes your username, e.g. `dev_dkAndrMo_lego_parts_predictor_model`. Run
+> `grep -E 'catalog|schema' databricks.yml` in your generated project to see the real values.
+
 ## Table of Contents
 1. [Local Development Setup](#local-development-setup)
 2. [Running Pipelines](#running-pipelines)
@@ -54,7 +61,7 @@ databricks workspace list
 
 ```bash
 # Deploy bundle to dev
-databricks bundle deploy --target dev --profile lego-ssc-dev
+databricks bundle deploy --target dev --profile lego-ssc-dev --var="catalog=<your_catalog>"
 
 # Run a specific job interactively (choose from list)
 databricks bundle run --target dev --profile lego-ssc-dev
@@ -77,6 +84,11 @@ databricks bundle run model_training_job --target dev \
 ```
 
 > **Note:** The bundle automatically builds and packages the wheel via `uv build` during `bundle deploy`. Manual `uv build` is not needed.
+
+> **`--var="catalog=..."` on every deploy.** The `catalog` variable defaults to your data
+> product name, and the bundle creates its schemas but not the catalog — so a deploy fails
+> unless a catalog of that exact name already exists. Pass your real catalog explicitly, or
+> omit the flag only when the names genuinely match.
 
 ### Run tests locally
 

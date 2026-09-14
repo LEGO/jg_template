@@ -190,10 +190,10 @@ model_version: string
 
 **Key variables (dev):**
 ```yaml
-catalog: my_ml_product
-schema_prefix: dev            # local: dev_<short_name>
+catalog: <data_product_name>   # defaults to the data product name; must be an existing UC catalog
+schema_prefix: dev             # local: dev_<short_name>
 general_schema: ${var.schema_prefix}_general_resources
-my_ml_product_model_schema: ${var.schema_prefix}_${var.my_ml_product_model_name}_model
+<data_product_name>_model_schema: ${var.schema_prefix}_${var.<data_product_name>_model_name}_model
 model_name: lego_parts_predictor
 feature_store_table_name: lego_set_features
 batch_prediction_table: lego_parts_predictor_batch_predictions
@@ -259,27 +259,38 @@ no job in `resources/` declares a job-level `parameters:` block — so `bundle r
 mechanism from Job Task Flags). Named parameters are baked in at deploy time from bundle
 variables, so the window has to move by redeploying with `--var`, then running:
 
+**Substitute your own data product name.** These variables are named
+`<data_product_name>_min_year` / `_max_year`, where `<data_product_name>` is the value you
+answered the first `bundle init` prompt with — the same string as your project directory and
+Python package, with underscores. Copying the placeholder verbatim fails with
+`Error: variable <data_product_name>_min_year has not been defined`. Confirm the exact names
+with `grep _min_year databricks.yml` in your generated project.
+
 ```bash
 # 1. Baseline era. Deploying with these variables set bakes them into the task's
 #    named_parameters; the run that follows also creates the baseline table (only if
 #    one doesn't already exist — see above).
-databricks bundle deploy -t local \
-  --var="my_ml_product_min_year=1949" --var="my_ml_product_max_year=1999"
+databricks bundle deploy -t local --var="catalog=<your_catalog>" \
+  --var="<data_product_name>_min_year=1949" --var="<data_product_name>_max_year=1999"
 databricks bundle run data_preprocessing_job -t local
 
 # 2. Advance the window, redeploy, and re-run. The monitor now reports drift vs the baseline.
-databricks bundle deploy -t local \
-  --var="my_ml_product_min_year=2000" --var="my_ml_product_max_year=2009"
+databricks bundle deploy -t local --var="catalog=<your_catalog>" \
+  --var="<data_product_name>_min_year=2000" --var="<data_product_name>_max_year=2009"
 databricks bundle run data_preprocessing_job -t local
 
 # 3. Advance again.
-databricks bundle deploy -t local \
-  --var="my_ml_product_min_year=2010" --var="my_ml_product_max_year=2023"
+databricks bundle deploy -t local --var="catalog=<your_catalog>" \
+  --var="<data_product_name>_min_year=2010" --var="<data_product_name>_max_year=2023"
 databricks bundle run data_preprocessing_job -t local
 ```
 
+`catalog` defaults to your data product name and the bundle creates schemas but **not** the
+catalog, so `<your_catalog>` must already exist in Unity Catalog. Drop the flag only if a
+catalog named exactly after your data product already exists.
+
 Verified: the variables do resolve into the task's named parameters — running
-`databricks bundle validate -t local --var="my_ml_product_min_year=1949" --output json`
+`databricks bundle validate -t local --var="<data_product_name>_min_year=1949" --output json`
 against a rendered project and inspecting the resolved `data_processing` task shows
 `min_year` as `'1949'`, versus `''` with no `--var` flag passed. The full
 deploy-and-run cycle above has not been executed end-to-end against a real workspace.
