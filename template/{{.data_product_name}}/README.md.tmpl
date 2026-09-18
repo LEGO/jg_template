@@ -91,6 +91,21 @@ databricks bundle run model_training_job -t local --profile <your-profile>
 
 Deployment is symmetric across environments and tied to branches: `dev/**` → dev, pull requests
 → qa, `release/*` → prod (see `.github/`).
+{{- if eq .include_serving "yes" }}
+
+## Query the serving endpoint
+
+```bash
+databricks serving-endpoints query <model_name>_endpoint \
+  --json '{"inputs": [[<one value per feature>]]}' --profile <your-profile>
+```
+
+The model is signed as an unnamed tensor, so the request body is `{"inputs": [[...]]}` and
+**not** `dataframe_records`. Each row takes one value per feature in feature-table column
+order, excluding the id and target columns — get the order with
+`DESCRIBE TABLE <catalog>.<schema>.<feature_table>`. A row of the wrong length is rejected
+with `Shape of input (1, N) does not match expected shape (-1, M)`.
+{{- end }}
 
 ## Help
 
