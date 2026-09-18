@@ -276,54 +276,8 @@ def main() -> None:
         host = (args.databricks_host or workspace_client.config.host).rstrip("/")
         endpoint_url = f"{host}/serving-endpoints/{args.serving_endpoint_name}/invocations"
 
-        # Build a correctly shaped example request. The signature's input shape is the
-        # authority.
-        feature_count = None
-        try:
-            model_info = mlflow.models.get_model_info(
-                f"models:/{args.catalog}.{args.schema}.{args.model_name}@{args.model_alias}"
-            )
-            tensor_spec = model_info.signature.inputs.inputs[0]
-            feature_count = int(tensor_spec.shape[-1])
-        except Exception as e:  # noqa: BLE001 - the URL is still worth printing without it
-            logger.warning(f"Could not read the model signature to size the example request: {e}")
-
         logger.info("Deployment complete!")
         logger.info(f"Endpoint URL: {endpoint_url}")
-        logger.info("")
-        logger.info("Example request:")
-        logger.info(f'  curl -X POST "{endpoint_url}" \\')
-        logger.info('    -H "Authorization: Bearer $DATABRICKS_TOKEN" \\')
-        logger.info('    -H "Content-Type: application/json" \\')
-        # train_model.py fits on `pdf[feature_cols].values` and signs the model with
-        # `infer_signature(X_train, preds)`, i.e. an *unnamed tensor* of shape (-1, n_features).
-        # The endpoint therefore takes the `inputs` tensor format, not `dataframe_records`:
-        # one list of feature values per row, ordered exactly as the feature table's
-        # columns minus the id and target columns.
-        if feature_count:
-            # year_released first, then the one-hot theme columns: a 2005 Technic-ish set
-            # with the first theme flag set. Values are illustrative; the SHAPE is what
-            # the endpoint enforces.
-            example_row = [2005] + [0] * (feature_count - 1)
-            example_row[1] = 1
-            logger.info(f"    -d '{{\"inputs\": [{example_row}]}}'")
-            logger.info("")
-            logger.info(
-                f"  The model expects exactly {feature_count} values per row, in "
-                "feature-table column order with the id and target columns excluded: "
-                "year_released first, then one column per theme (exactly one set to 1)."
-            )
-            logger.info(
-                "  Get the exact column order with: "
-                f"DESCRIBE TABLE {args.catalog}.{args.schema}.lego_set_features"
-            )
-        else:
-            logger.info('    -d \'{"inputs": [[<one value per feature>]]}\'')
-            logger.info("")
-            logger.info(
-                "  NOTE `inputs` rows must be the trained feature count, in feature-table "
-                "column order (id and target columns excluded)."
-            )
 
     except Exception as e:
         logger.error(f"Deployment failed: {e}")
