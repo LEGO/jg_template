@@ -21,7 +21,7 @@ This document provides a high-level visualization of data flow through the pipel
 │  • Drop theme-only / blank id-or-target rows         │
 │  • Cast year_released, number_of_parts → numeric    │
 │  • Filter: number_of_parts > 0 (drop merchandise)   │
-│  • Dedupe on set_number                             │
+│  • deduplicate on set_number                      │
 │  • Build theme vocabulary (top 100 + Other)         │
 │  • Apply year window (drift-replay lever)           │
 │  • One-hot encode theme_name against the vocabulary │
