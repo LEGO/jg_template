@@ -42,7 +42,7 @@ resources:
               schema: ${resources.schemas.{{.data_product_name}}_model_schema.name}
               model_name: ${var.{{.data_product_name}}_model_name}
               serving_endpoint_name: ${var.{{.data_product_name}}_model_name}_endpoint
-              databricks_host: ${var.databricks_host}
+              databricks_host: ${workspace.host}
               permission_group: ${var.permission_group}
               workload_size: Small
               scale_to_zero: "true"
