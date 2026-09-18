@@ -144,10 +144,6 @@ def train_model(
     signature = infer_signature(X_train, preds)
     rmse = np.sqrt(mean_squared_error(y_test, preds))
 
-    # Predicting the training mean for every row is the dumbest possible model, so its
-    # RMSE is the bar the trained model has to clear. Logged alongside so the comparison
-    # is explicit in MLflow: an `rmse` above `baseline_rmse` means the model has negative
-    # skill, which a lone RMSE figure hides completely. The Ray path logs the same metric.
     baseline_rmse = float(np.sqrt(mean_squared_error(y_test, np.full_like(y_test, y_train.mean(), dtype=float))))
     skill = 1.0 - (rmse / baseline_rmse) if baseline_rmse else 0.0
     logger.info(f"RMSE: {rmse:.4f}  (predict-the-mean baseline = {baseline_rmse:.4f})")
