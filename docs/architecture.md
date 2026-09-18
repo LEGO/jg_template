@@ -109,10 +109,10 @@ Raw source data lives outside the bundle (default `ai_agency.general_resource.le
 **lego_sets_bronze:**
 ```
 set_number: string
-set_name: string
+set_name: string           # not used by the pipeline
 year_released: string      # text with a trailing '.0', e.g. "1965.0"
 number_of_parts: string    # text with a trailing '.0', e.g. "43.0"
-image_url: string
+image_url: string          # not used by the pipeline
 theme_name: string
 ```
 

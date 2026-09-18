@@ -8,10 +8,10 @@ This document provides a high-level visualization of data flow through the pipel
 ┌─────────────────────────────────────────────────────┐
 │  Unity Catalog: lego_sets_bronze                    │
 │  • set_number: string                               │
-│  • set_name: string                                 │
+│  • set_name: string  (unused)                       │
 │  • year_released: string  (text, trailing '.0')     │
 │  • number_of_parts: string  (text, trailing '.0')   │
-│  • image_url: string                                │
+│  • image_url: string  (unused)                      │
 │  • theme_name: string                               │
 └────────────────────────┬────────────────────────────┘
                          │ spark.table()
