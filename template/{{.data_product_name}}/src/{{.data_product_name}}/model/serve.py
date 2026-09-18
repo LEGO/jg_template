@@ -272,10 +272,7 @@ def main() -> None:
             permission_group = args.permission_group,
         )
 
-        # Prefer the host passed in from the bundle: on a job cluster the SDK's resolved
-        # host can be the canonical dbc-*.cloud.databricks.com form, which works for API
-        # calls but does not match the vanity URL a user sees on the model in Unity
-        # Catalog. Both include the scheme, so never prepend one.
+        # config.host resolves to the canonical dbc-* form on a job cluster, not the vanity URL.
         host = (args.databricks_host or workspace_client.config.host).rstrip("/")
         endpoint_url = f"{host}/serving-endpoints/{args.serving_endpoint_name}/invocations"
 
