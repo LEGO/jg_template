@@ -79,9 +79,9 @@ def create_or_update_monitor(
 ) -> None:
     """Create or update a Lakehouse InferenceLog monitor, refreshing it when needed.
 
-    Waits for the monitor to become active before refreshing. A newly created monitor
-    is refreshed automatically by Databricks, so an explicit refresh is issued only on
-    the update path. Safe to call repeatedly.
+    A newly created monitor is refreshed automatically by Databricks, so an explicit
+    refresh — and the wait for the monitor to leave PENDING that it requires — happens
+    only on the update path. Safe to call repeatedly.
 
     Args:
         workspace_client: Databricks workspace client.
@@ -110,9 +110,9 @@ def create_or_update_monitor(
         # Creation triggers its own initial refresh; a second one would be redundant.
         needs_refresh = False
 
-    _wait_until_active(workspace_client=workspace_client, table_name=table_name)
-
     if needs_refresh:
+        # Only the update path refreshes, so only it needs the monitor out of PENDING.
+        _wait_until_active(workspace_client=workspace_client, table_name=table_name)
         logger.info(f"Triggering refresh for monitor '{table_name}'")
         workspace_client.quality_monitors.run_refresh(table_name=table_name)
 
