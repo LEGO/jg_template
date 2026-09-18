@@ -97,11 +97,6 @@ def main() -> None:
 
     #NOTE converting to Pandas for sklearn to work
     pandas_df = dataframe.toPandas()
-    # A LEGO set has a whole, non-negative number of pieces, so the regressor's raw float
-    # output is rounded and clipped. Clipping is not cosmetic: on the current data 3 of
-    # 3,423 holdout predictions come out negative, and a set with -12 pieces in a Delta
-    # table is worse than useless. Rounding costs nothing measurable (holdout RMSE is
-    # identical to 2 decimal places).
     raw_predictions = champion_model.predict(
         pandas_df.drop([id_column, target_name], axis=1).to_numpy()
     )
