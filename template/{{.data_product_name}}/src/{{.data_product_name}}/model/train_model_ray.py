@@ -177,10 +177,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--feature_store_table_name", required=True, help="Feature store table name.")
     parser.add_argument("--model_name", required=True, help="Registered model name.")
     parser.add_argument("--experiment_path", required=True, help="MLflow experiment path.")
-    parser.add_argument(
-        "--target_col", required=False, default=column_params["target_name"], help="Target column name."
-    )
-    parser.add_argument("--id_col", required=False, default=column_params["id"], help="ID column name.")
+    parser.add_argument("--target_col", required=False, default="Score", help="Target column name.")
+    parser.add_argument("--id_col", required=False, default="Name", help="ID column name.")
     parser.add_argument("--model_alias", required=False, default="champion", help="Alias for the registered model.")
     parser.add_argument("--num_workers", required=False, type=int, default=2, help="Number of Ray training workers.")
     parser.add_argument(
