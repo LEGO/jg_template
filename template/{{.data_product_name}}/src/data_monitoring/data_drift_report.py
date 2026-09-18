@@ -83,9 +83,6 @@ def setup_monitor(
         )
         logger.info("Created data monitor on %s (metrics -> %s).", table_fqn, output_schema_name)
     except ResourceAlreadyExists:
-        # Update rather than only refreshing: a monitor created before the baseline
-        # table existed would otherwise never pick it up, and would silently report no
-        # drift forever.
         logger.info("Monitor already exists on %s; updating it and triggering a refresh.", table_fqn)
         workspace_client.quality_monitors.update(
             table_name=table_fqn,
