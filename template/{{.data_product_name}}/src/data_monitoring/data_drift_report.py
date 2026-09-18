@@ -62,7 +62,7 @@ def setup_monitor(
     assets_dir: str,
     baseline_table_name: str | None = None,
 ) -> None:
-    """Creates a Snapshot data monitor on ``table_fqn``, or updates and refreshes it.
+    """Creates a Snapshot data monitor on ``table_fqn``, or refreshes it if it exists.
 
     Args:
         workspace_client: Authenticated WorkspaceClient.
