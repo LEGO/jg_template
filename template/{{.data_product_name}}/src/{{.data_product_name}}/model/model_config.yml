@@ -5,11 +5,6 @@ columns:
   top_n_categories: 100
   numeric_features: ["year_released"]
   prediction_name: "Predicted_number_of_parts"
-# HistGradientBoostingRegressor. Chosen over AdaBoostRegressor because AdaBoost.R2
-# reweights toward the examples it fits worst -- here the handful of 5,000-11,695-piece
-# sets -- which drags every prediction upward and made it the only model measured that
-# scored WORSE than predicting a constant (RMSE 530 vs a 476 predict-the-mean baseline).
-# HistGB reaches RMSE ~431 on the same 20% holdout, about 9% better than the baseline.
 default_hgb:
   max_iter: 200
   learning_rate: 0.1
