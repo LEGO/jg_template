@@ -1,132 +1,93 @@
 from unittest.mock import MagicMock
 
 import pytest
-from databricks.sdk.errors import NotFound
+from databricks.sdk.errors import ResourceAlreadyExists
 
 from {{.data_product_name}}.monitoring import setup_monitor
 
-ACTIVE = "MONITOR_STATUS_ACTIVE"
-PENDING = "MONITOR_STATUS_PENDING"
-ERROR = "MONITOR_STATUS_ERROR"
-
-TABLE = "cat.sch.preds"
-
-
-def _client():
-    return MagicMock()
+TABLE = "cat.sch.preds_unpacked"
+SCHEMA = "cat.sch"
+ASSETS_DIR = "/Workspace/monitoring"
+TABLE_ID = "7f38e280-130a-4ddb-84db-e96d43b5d32e"
+SCHEMA_ID = "164b27e7-0d12-4ff7-ad7a-0f97ac606ee6"
 
 
-def _monitor(status: str) -> MagicMock:
-    """A MonitorInfo-like object whose `status` is a plain wire string."""
-    info = MagicMock()
-    info.status = status
-    return info
+def _client() -> MagicMock:
+    client = MagicMock()
+    client.tables.get.return_value = MagicMock(table_id=TABLE_ID)
+    client.schemas.get.return_value = MagicMock(schema_id=SCHEMA_ID)
+    return client
 
 
-@pytest.fixture(autouse=True)
-def _no_sleep(monkeypatch):
-    """Keep the status poll from actually waiting between attempts."""
-    monkeypatch.setattr(setup_monitor.time, "sleep", lambda _seconds: None)
-
-
-def _call(client):
+def _call(client: MagicMock) -> None:
     setup_monitor.create_or_update_monitor(
         workspace_client=client,
         table_name=TABLE,
-        output_schema_name="cat.sch",
-        assets_dir="/Workspace/monitoring",
+        output_schema_name=SCHEMA,
+        assets_dir=ASSETS_DIR,
     )
 
 
-def test_creates_monitor_when_not_found():
+def test_creates_monitor_when_absent():
     client = _client()
-    # First lookup decides create-vs-update; the second is the status poll.
-    client.quality_monitors.get.side_effect = [NotFound("nope"), _monitor(ACTIVE)]
 
     _call(client)
 
-    client.quality_monitors.create.assert_called_once()
-    client.quality_monitors.update.assert_not_called()
+    client.data_quality.create_monitor.assert_called_once()
+    client.data_quality.update_monitor.assert_not_called()
 
-    kwargs = client.quality_monitors.create.call_args.kwargs
-    assert kwargs["table_name"] == TABLE
-    assert kwargs["output_schema_name"] == "cat.sch"
-    assert kwargs["assets_dir"] == "/Workspace/monitoring"
-    assert kwargs["inference_log"].timestamp_col == "prediction_ts"
-    assert kwargs["inference_log"].prediction_col == "Predicted_number_of_parts"
-    assert kwargs["inference_log"].model_id_col == "model_version"
-    assert kwargs["inference_log"].granularities == ["1 day"]
+    monitor = client.data_quality.create_monitor.call_args.kwargs["monitor"]
+    assert monitor.object_type == "table"
+    # The API addresses objects by UUID, not name: passing the FQN fails with
+    # "UUID string too large".
+    assert monitor.object_id == TABLE_ID
+    config = monitor.data_profiling_config
+    assert config.output_schema_id == SCHEMA_ID
+    assert config.assets_dir == ASSETS_DIR
 
 
-def test_create_does_not_trigger_redundant_refresh():
-    """Databricks refreshes a newly created monitor itself, and refreshing a
-    still-PENDING monitor is rejected outright."""
+def test_inference_log_config_matches_the_prediction_table():
     client = _client()
-    client.quality_monitors.get.side_effect = [NotFound("nope"), _monitor(ACTIVE)]
 
     _call(client)
 
-    client.quality_monitors.run_refresh.assert_not_called()
+    log = client.data_quality.create_monitor.call_args.kwargs["monitor"].data_profiling_config.inference_log
+    assert log.problem_type.value == "INFERENCE_PROBLEM_TYPE_REGRESSION"
+    assert log.timestamp_column == "prediction_ts"
+    assert log.prediction_column == "Predicted_number_of_parts"
+    assert log.model_id_column == "model_version"
+    assert [g.value for g in log.granularities] == ["AGGREGATION_GRANULARITY_1_DAY"]
 
 
-def test_updates_monitor_when_exists():
+def test_updates_monitor_when_it_already_exists():
     client = _client()
-    client.quality_monitors.get.side_effect = [_monitor(ACTIVE), _monitor(ACTIVE)]
+    client.data_quality.create_monitor.side_effect = ResourceAlreadyExists("exists")
 
     _call(client)
 
-    client.quality_monitors.update.assert_called_once()
-    client.quality_monitors.create.assert_not_called()
-    client.quality_monitors.run_refresh.assert_called_once_with(table_name=TABLE)
+    client.data_quality.update_monitor.assert_called_once()
+    kwargs = client.data_quality.update_monitor.call_args.kwargs
+    assert kwargs["object_id"] == TABLE_ID
+    assert kwargs["update_mask"] == "data_profiling_config"
 
 
-def test_refresh_waits_until_monitor_leaves_pending():
+def test_requests_a_refresh_without_waiting():
+    """Fire and forget: the refresh state is logged, never polled."""
     client = _client()
-    client.quality_monitors.get.side_effect = [
-        _monitor(ACTIVE),   # existence check
-        _monitor(PENDING),  # update pushed it back to pending
-        _monitor(PENDING),
-        _monitor(ACTIVE),
-    ]
 
     _call(client)
 
-    assert client.quality_monitors.get.call_count == 4
-    client.quality_monitors.run_refresh.assert_called_once_with(table_name=TABLE)
+    client.data_quality.create_refresh.assert_called_once()
+    assert client.data_quality.create_refresh.call_args.kwargs["object_id"] == TABLE_ID
+    # No status polling: get_monitor is never consulted.
+    client.data_quality.get_monitor.assert_not_called()
 
 
-def test_raises_and_skips_refresh_when_monitor_reports_failure():
-    client = _client()
-    client.quality_monitors.get.side_effect = [_monitor(ACTIVE), _monitor(ERROR)]
+def test_refresh_is_requested_on_both_paths():
+    for side_effect in (None, ResourceAlreadyExists("exists")):
+        client = _client()
+        client.data_quality.create_monitor.side_effect = side_effect
 
-    with pytest.raises(RuntimeError, match=ERROR):
         _call(client)
 
-    client.quality_monitors.run_refresh.assert_not_called()
-
-
-def test_wait_times_out_when_monitor_stays_pending():
-    client = _client()
-    client.quality_monitors.get.return_value = _monitor(PENDING)
-
-    with pytest.raises(TimeoutError):
-        setup_monitor._wait_until_active(
-            workspace_client=client,
-            table_name=TABLE,
-            timeout_seconds=0,
-            poll_seconds=0,
-        )
-
-    client.quality_monitors.run_refresh.assert_not_called()
-
-
-def test_wait_accepts_enum_status_object():
-    """The SDK may return a MonitorInfoStatus enum rather than a raw string."""
-    client = _client()
-    status = MagicMock()
-    status.value = ACTIVE
-    client.quality_monitors.get.return_value = _monitor(status)
-
-    setup_monitor._wait_until_active(workspace_client=client, table_name=TABLE)
-
-    assert client.quality_monitors.get.call_count == 1
+        client.data_quality.create_refresh.assert_called_once()

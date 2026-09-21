@@ -1,73 +1,34 @@
 import argparse
-import time
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.errors import NotFound
-from databricks.sdk.service.catalog import (
-    MonitorInferenceLog,
-    MonitorInferenceLogProblemType,
+from databricks.sdk.errors import ResourceAlreadyExists
+from databricks.sdk.service.dataquality import (
+    AggregationGranularity,
+    DataProfilingConfig,
+    InferenceLogConfig,
+    InferenceProblemType,
+    Monitor,
+    Refresh,
 )
 
 from common.utils import get_logger
 
 logger = get_logger()
 
-# Compared as plain strings: the SDK may hand back either a MonitorInfoStatus enum
-# or a raw string, and these are the documented wire values.
-_STATUS_ACTIVE = "MONITOR_STATUS_ACTIVE"
-_STATUS_FAILURES = ("MONITOR_STATUS_ERROR", "MONITOR_STATUS_FAILED")
+_OBJECT_TYPE = "table"
 
 
-def _inference_log() -> MonitorInferenceLog:
-    return MonitorInferenceLog(
-        problem_type=MonitorInferenceLogProblemType.PROBLEM_TYPE_REGRESSION,
-        timestamp_col="prediction_ts",
-        granularities=["1 day"],
-        prediction_col="Predicted_number_of_parts",
-        model_id_col="model_version",
-    )
-
-
-def _wait_until_active(
-    workspace_client: WorkspaceClient,
-    table_name: str,
-    timeout_seconds: int = 1800,
-    poll_seconds: int = 30,
-) -> None:
-    """Block until the monitor leaves MONITOR_STATUS_PENDING.
-
-    Creating or updating a monitor returns as soon as the request is accepted; Databricks
-    then provisions the metric tables and dashboard while the monitor sits in
-    MONITOR_STATUS_PENDING. `run_refresh` is rejected in that state, so callers must wait.
-    The SDK exposes no waiter for quality monitors, hence the explicit poll.
-
-    Args:
-        workspace_client: Databricks workspace client.
-        table_name: Fully qualified monitored table (catalog.schema.table).
-        timeout_seconds: Give up after this long so a stuck monitor fails the task
-            instead of holding the cluster indefinitely.
-        poll_seconds: Delay between status checks.
-
-    Raises:
-        RuntimeError: If the monitor reports a failure status.
-        TimeoutError: If the monitor is still not active within `timeout_seconds`.
-    """
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        info = workspace_client.quality_monitors.get(table_name=table_name)
-        status = str(getattr(info.status, "value", info.status))
-
-        if status == _STATUS_ACTIVE:
-            logger.info(f"Monitor '{table_name}' is active")
-            return
-        if status in _STATUS_FAILURES:
-            raise RuntimeError(f"Monitor for '{table_name}' entered {status}")
-
-        logger.info(f"Monitor '{table_name}' is {status}; polling again in {poll_seconds}s")
-        time.sleep(poll_seconds)
-
-    raise TimeoutError(
-        f"Monitor for '{table_name}' still not active after {timeout_seconds}s"
+def _data_profiling_config(output_schema_id: str, assets_dir: str) -> DataProfilingConfig:
+    return DataProfilingConfig(
+        output_schema_id=output_schema_id,
+        assets_dir=assets_dir,
+        inference_log=InferenceLogConfig(
+            problem_type=InferenceProblemType.INFERENCE_PROBLEM_TYPE_REGRESSION,
+            timestamp_column="prediction_ts",
+            granularities=[AggregationGranularity.AGGREGATION_GRANULARITY_1_DAY],
+            prediction_column="Predicted_number_of_parts",
+            model_id_column="model_version",
+        ),
     )
 
 
@@ -77,11 +38,10 @@ def create_or_update_monitor(
     output_schema_name: str,
     assets_dir: str,
 ) -> None:
-    """Create or update a Lakehouse InferenceLog monitor, refreshing it when needed.
+    """Create or update a data-quality monitor on ``table_name``, then request a refresh.
 
-    A newly created monitor is refreshed automatically by Databricks, so an explicit
-    refresh — and the wait for the monitor to leave PENDING that it requires — happens
-    only on the update path. Safe to call repeatedly.
+    Fire and forget: the refresh is requested and its state logged, but not waited on.
+    Monitoring is best-effort, so a pending or failed refresh must not fail the job.
 
     Args:
         workspace_client: Databricks workspace client.
@@ -89,32 +49,40 @@ def create_or_update_monitor(
         output_schema_name: Fully qualified schema (catalog.schema) for monitor outputs.
         assets_dir: Workspace directory for monitor assets (dashboard, etc.).
     """
-    try:
-        workspace_client.quality_monitors.get(table_name=table_name)
-        logger.info(f"Monitor for '{table_name}' exists. Updating...")
-        workspace_client.quality_monitors.update(
-            table_name=table_name,
-            output_schema_name=output_schema_name,
-            inference_log=_inference_log(),
-        )
-        # An update changes config only; metrics need an explicit recompute.
-        needs_refresh = True
-    except NotFound:
-        logger.info(f"Monitor for '{table_name}' not found. Creating...")
-        workspace_client.quality_monitors.create(
-            table_name=table_name,
-            output_schema_name=output_schema_name,
-            assets_dir=assets_dir,
-            inference_log=_inference_log(),
-        )
-        # Creation triggers its own initial refresh; a second one would be redundant.
-        needs_refresh = False
+    # The data-quality API addresses objects by UUID, not by name.
+    table_id = workspace_client.tables.get(full_name=table_name).table_id
+    output_schema_id = workspace_client.schemas.get(full_name=output_schema_name).schema_id
 
-    if needs_refresh:
-        # Only the update path refreshes, so only it needs the monitor out of PENDING.
-        _wait_until_active(workspace_client=workspace_client, table_name=table_name)
-        logger.info(f"Triggering refresh for monitor '{table_name}'")
-        workspace_client.quality_monitors.run_refresh(table_name=table_name)
+    config = _data_profiling_config(output_schema_id=output_schema_id, assets_dir=assets_dir)
+
+    try:
+        workspace_client.data_quality.create_monitor(
+            monitor=Monitor(
+                object_type=_OBJECT_TYPE,
+                object_id=table_id,
+                data_profiling_config=config,
+            )
+        )
+        logger.info(f"Created monitor for '{table_name}'")
+    except ResourceAlreadyExists:
+        workspace_client.data_quality.update_monitor(
+            object_type=_OBJECT_TYPE,
+            object_id=table_id,
+            monitor=Monitor(
+                object_type=_OBJECT_TYPE,
+                object_id=table_id,
+                data_profiling_config=config,
+            ),
+            update_mask="data_profiling_config",
+        )
+        logger.info(f"Updated monitor for '{table_name}'")
+
+    refresh = workspace_client.data_quality.create_refresh(
+        object_type=_OBJECT_TYPE,
+        object_id=table_id,
+        refresh=Refresh(object_type=_OBJECT_TYPE, object_id=table_id),
+    )
+    logger.info(f"Requested refresh for '{table_name}' (state: {refresh.state})")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -131,13 +99,10 @@ def main() -> None:
     args = _parse_args()
     workspace_client = WorkspaceClient()
 
-    table_name = f"{args.catalog}.{args.schema}.{args.unpacked_table}"
-    output_schema_name = f"{args.catalog}.{args.schema}"
-
     create_or_update_monitor(
         workspace_client=workspace_client,
-        table_name=table_name,
-        output_schema_name=output_schema_name,
+        table_name=f"{args.catalog}.{args.schema}.{args.unpacked_table}",
+        output_schema_name=f"{args.catalog}.{args.schema}",
         assets_dir=args.assets_dir,
     )
     logger.info("Monitor setup complete.")
