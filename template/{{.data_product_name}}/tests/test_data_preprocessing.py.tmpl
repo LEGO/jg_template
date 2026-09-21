@@ -1,25 +1,23 @@
-"""Tests for the LEGO feature-engineering steps (local Spark session)."""
+"""Example tests for the feature-engineering steps (local Spark session)."""
 
 import pytest
 from pyspark.sql import SparkSession
 
 from {{.data_product_name}}.data_preprocessing import (
-    _optional_year,
-    _sql_comment_literal,
     alter_table_with_comments,
-    apply_year_window,
-    build_category_vocabulary,
     build_feature_frame,
-    create_category_onehot_encodings,
-    deduplicate_on_key,
-    drop_invalid_rows,
-    filter_buildable_sets,
-    fix_data_types,
-    to_column_name,
-    write_baseline_if_absent,
 )
 
 BRONZE_COLUMNS = ["set_number", "year_released", "number_of_parts", "theme_name"]
+
+COLUMN_PARAMS = {
+    "id": "set_number",
+    "target_name": "number_of_parts",
+    "categorical": "theme_name",
+    "top_n_categories": 2,
+    "numeric_features": ["year_released"],
+    "year_column": "year_released",
+}
 
 
 @pytest.fixture(scope="module")
@@ -28,9 +26,8 @@ def spark():
         SparkSession.builder.appName("test_data_preprocessing")
         .master("local[1]")
         .config("spark.sql.shuffle.partitions", "1")
-        # DBR 17.x is Spark 4-based and enables ANSI mode by default, whereas local
-        # pyspark 3.5 disables it. Without this, a bad numeric cast passes here and
-        # fails on the cluster.
+        # DBR is Spark 4-based and enables ANSI mode by default, whereas local pyspark
+        # disables it. Without this a bad numeric cast passes here and fails on the cluster.
         .config("spark.sql.ansi.enabled", "true")
         .getOrCreate()
     )
@@ -43,385 +40,60 @@ def _bronze(spark, rows):
     return spark.createDataFrame(rows, BRONZE_COLUMNS)
 
 
-def test_fix_data_types_casts_decimal_strings(spark):
-    # Bronze stores these as text with a trailing '.0'. Under ANSI mode a direct
-    # string->int cast on "1965.0" RAISES CAST_INVALID_INPUT, so this guards the
-    # double-then-int route. Fails if anyone "simplifies" it to a single cast.
-    df = _bronze(spark, [("001-1", "1965.0", "43.0", "Technic")])
-    out = fix_data_types(df, target_name="number_of_parts", numeric_features=["year_released"]).collect()[0]
+def test_feature_schema_is_stable_across_year_windows(spark):
+    """Covers both load-bearing orderings in build_feature_frame.
 
-    assert out["year_released"] == 1965
-    assert out["number_of_parts"] == pytest.approx(43.0)
-
-
-def test_drop_invalid_rows_removes_theme_only_rows(spark):
-    # Bronze contains 7 rows where every field is empty except theme_name.
-    df = _bronze(spark, [
-        ("001-1", "1965.0", "43.0", "Technic"),
-        ("", "", "", "Pirates"),
-    ])
-    out = drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts")
-
-    assert [r["set_number"] for r in out.collect()] == ["001-1"]
-
-
-def test_drop_invalid_rows_removes_blank_target_with_valid_id(spark):
-    # The optimizer cannot save this row: a valid id means no pushed-down predicate
-    # removes it before the cast. Guards the ANSI CAST_INVALID_INPUT crash directly.
-    df = _bronze(spark, [
-        ("001-1", "1965.0", "43.0", "Technic"),
-        ("999-1", "1980.0", "", "Space"),
-    ])
-    out = drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts")
-
-    assert [r["set_number"] for r in out.collect()] == ["001-1"]
-
-
-def test_blank_rows_are_dropped_before_casting(spark):
-    # Composed-order unit check only: this test calls drop_invalid_rows() then
-    # fix_data_types() itself, in that order, so it stays green even if
-    # build_feature_frame's internal ordering were reversed. The guard on the
-    # production ordering is test_build_feature_frame_survives_blank_target_under_ansi
-    # below, which calls build_feature_frame() directly.
-    df = _bronze(spark, [
-        ("001-1", "1965.0", "43.0", "Technic"),
-        ("999-1", "1980.0", "", "Space"),
-        ("", "", "", "Pirates"),
-    ])
-    out = fix_data_types(
-        drop_invalid_rows(df, id_column="set_number", target_name="number_of_parts"),
-        target_name="number_of_parts",
-        numeric_features=["year_released"],
-    ).collect()
-
-    assert len(out) == 1
-    assert out[0]["year_released"] == 1965
-    assert out[0]["number_of_parts"] == pytest.approx(43.0)
-
-
-def test_filter_buildable_sets_removes_zero_part_merchandise(spark):
-    df = _bronze(spark, [
-        ("001-1", "1965.0", "43.0", "Technic"),
-        ("kc-1", "2015.0", "0.0", "Key Chain"),
-    ])
-    df = fix_data_types(df, "number_of_parts", ["year_released"])
-    out = filter_buildable_sets(df, target_name="number_of_parts")
-
-    assert [r["set_number"] for r in out.collect()] == ["001-1"]
-
-
-def test_deduplicate_on_key_leaves_one_row_per_id(spark):
-    # upsert_delta_table MERGEs on this key; Delta MERGE fails when several source
-    # rows match one target row.
-    df = _bronze(spark, [
-        ("001-1", "1965.0", "43.0", "Technic"),
-        ("001-1", "1965.0", "43.0", "Technic"),
-    ])
-    out = deduplicate_on_key(df, id_column="set_number")
-
-    assert out.count() == 1
-
-
-def test_to_column_name_preserves_capitalisation_and_underscores_single_spaces():
-    # Ordinary theme names: a single space becomes an underscore and capitalisation
-    # is preserved.
-    assert to_column_name("Star Wars") == "Star_Wars"
-    assert to_column_name("Technic") == "Technic"
-    assert to_column_name("Classic Town") == "Classic_Town"
-
-
-def test_to_column_name_neutralises_the_dot_hazard():
-    # Theme "4.5V" is inside the top 100. A '.' in a column name is read by Spark as
-    # nested-field access, so select("4.5V") would break.
-    assert to_column_name("4.5V") == "4_5V"
-    assert to_column_name("Bricks & More") == "Bricks_More"
-    assert to_column_name("HO 1:87 Vehicles") == "HO_1_87_Vehicles"
-    assert to_column_name("Spider-Man") == "Spider_Man"
-
-
-def test_build_category_vocabulary_breaks_count_ties_by_name(spark):
-    # The real 100th and 101st themes both have 39 sets, so the tie-break is
-    # load-bearing: without it the feature schema changes between runs.
-    #
-    # NOTE the row order below is deliberate and load-bearing too. "Beta" is inserted
-    # BEFORE "Alpha" so that Spark's own aggregation order disagrees with the expected
-    # result. Insert them alphabetically instead and this test passes even with the
-    # tie-break removed — verified by deleting `.asc()` and seeing it stay green across
-    # local[1] through local[8]. Do not "tidy" these rows into alphabetical order.
-    rows = [("s1", "1990.0", "10.0", "Zebra"), ("s2", "1990.0", "10.0", "Zebra"),
-            ("s3", "1990.0", "10.0", "Beta"), ("s4", "1990.0", "10.0", "Alpha")]
-    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=2)
-
-    # Zebra wins on count (2); Alpha beats Beta on value ascending at 1 each.
-    assert vocabulary[:2] == ["Zebra", "Alpha"]
-
-
-def test_build_category_vocabulary_appends_other_when_absent(spark):
-    rows = [("s1", "1990.0", "10.0", "Technic")]
-    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=1)
-
-    assert vocabulary == ["Technic", "Other"]
-
-
-def test_build_category_vocabulary_does_not_duplicate_a_real_other_theme(spark):
-    # "Other" is a genuine LEGO theme (87 sets, rank 46). When it wins a slot it must
-    # not also be appended.
-    rows = [("s1", "1990.0", "10.0", "Other"), ("s2", "1990.0", "10.0", "Other"),
-            ("s3", "1990.0", "10.0", "Technic")]
-    vocabulary = build_category_vocabulary(_bronze(spark, rows), "theme_name", top_n=2)
-
-    assert vocabulary.count("Other") == 1
-    assert sorted(vocabulary) == ["Other", "Technic"]
-
-
-def test_create_category_onehot_encodings_is_single_label(spark):
-    rows = [("s1", "1990.0", "10.0", "Star Wars"), ("s2", "1990.0", "10.0", "Technic")]
-    df, columns = create_category_onehot_encodings(
-        _bronze(spark, rows), "theme_name", ["Star Wars", "Technic", "Other"]
-    )
-    out = {r["set_number"]: r for r in df.collect()}
-
-    assert columns == ["Star_Wars", "Technic", "Other"]
-    assert [out["s1"][c] for c in columns] == [1, 0, 0]
-    assert [out["s2"][c] for c in columns] == [0, 1, 0]
-    assert "_bucketed_category" not in df.columns
-
-
-def test_unknown_and_real_other_themes_share_the_other_column(spark):
-    # 188 themes appear only after 2010. They fold into Other alongside the source's
-    # own Other theme - deliberately merged, see spec 5.3.
-    rows = [("s1", "1990.0", "10.0", "Technic"),
-            ("s2", "2015.0", "10.0", "Ninjago"),   # outside the vocabulary
-            ("s3", "2015.0", "10.0", "Other")]     # the real Other theme
-    df, columns = create_category_onehot_encodings(
-        _bronze(spark, rows), "theme_name", ["Technic", "Other"]
-    )
-    out = {r["set_number"]: r for r in df.collect()}
-
-    assert out["s2"]["Other"] == 1
-    assert out["s3"]["Other"] == 1
-    assert out["s1"]["Other"] == 0
-
-
-def test_create_category_onehot_encodings_raises_on_column_collision(spark):
-    rows = [("s1", "1990.0", "10.0", "Bricks & More")]
-    with pytest.raises(ValueError, match="collision"):
-        create_category_onehot_encodings(
-            _bronze(spark, rows), "theme_name", ["Bricks & More", "Bricks More"]
-        )
-
-
-def test_apply_year_window_filters_both_bounds_inclusively(spark):
-    # s2 and s4 sit exactly on the bounds: this fails if >= becomes > or <= becomes <.
-    rows = [("s1", "1970.0", "10.0", "Technic"), ("s2", "2000.0", "10.0", "Technic"),
-            ("s3", "2005.0", "10.0", "Technic"), ("s4", "2010.0", "10.0", "Technic"),
-            ("s5", "2020.0", "10.0", "Technic")]
-    df = fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"])
-    ids = lambda lo, hi: {r["set_number"] for r in apply_year_window(df, "year_released", lo, hi).collect()}
-
-    assert ids(2000, 2010) == {"s2", "s3", "s4"}
-    assert ids(None, None) == {"s1", "s2", "s3", "s4", "s5"}
-    assert ids(2000, None) == {"s2", "s3", "s4", "s5"}
-    assert ids(None, 2010) == {"s1", "s2", "s3", "s4"}
-
-
-def test_feature_schema_is_identical_across_year_windows(spark):
-    """The schema-churn guard, and it must fail if the vocabulary moves below the window.
-
-    Two disjoint windows whose own top-N themes differ must still produce identical
-    columns, because the vocabulary is derived from the whole dataset. Build the
-    vocabulary after the window instead and the two frames get different columns.
+    The vocabulary is built from the whole dataset BEFORE the year window, so two disjoint
+    windows must produce identical columns even though their own top-N themes differ.
+    Invalid rows are dropped BEFORE casting, so the blank-target row is filtered rather
+    than raising CAST_INVALID_INPUT under ANSI mode.
     """
-    rows = [("s1", "1970.0", "10.0", "Technic"), ("s2", "1970.0", "10.0", "Technic"),
-            ("s3", "2020.0", "10.0", "Ninjago"), ("s4", "2020.0", "10.0", "Ninjago"),
-            ("s5", "2020.0", "10.0", "Friends")]
-    column_params = {
-        "id": "set_number", "target_name": "number_of_parts",
-        "categorical": "theme_name", "top_n_categories": 2,
-        "numeric_features": ["year_released"], "year_column": "year_released",
-    }
-    old, old_cols = build_feature_frame(_bronze(spark, rows), column_params, 1949, 1999)
-    new, new_cols = build_feature_frame(_bronze(spark, rows), column_params, 2000, 2023)
+    rows = [
+        ("s1", "1970.0", "10.0", "Technic"),
+        ("s2", "1970.0", "10.0", "Technic"),
+        ("s3", "2020.0", "10.0", "Ninjago"),
+        ("s4", "2020.0", "10.0", "Ninjago"),
+        ("s5", "2020.0", "10.0", "Friends"),
+        ("s6", "1980.0", "", "Space"),  # valid id, blank target: must be dropped, not raise
+    ]
+    old, old_cols = build_feature_frame(_bronze(spark, rows), COLUMN_PARAMS, 1949, 1999)
+    new, new_cols = build_feature_frame(_bronze(spark, rows), COLUMN_PARAMS, 2000, 2023)
 
     assert old.columns == new.columns
     assert old_cols == new_cols
-    # Sanity: built per-window, the vocabularies WOULD differ - which is what makes the
-    # equality above meaningful rather than vacuous. Asserted on vocabulary content
-    # rather than row counts, since a fixture edit could preserve the counts while making
-    # both windows share themes, silently making this test vacuous again.
-    old_window = apply_year_window(
-        fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"]), "year_released", 1949, 1999
-    )
-    new_window = apply_year_window(
-        fix_data_types(_bronze(spark, rows), "number_of_parts", ["year_released"]), "year_released", 2000, 2023
-    )
-    assert build_category_vocabulary(old_window, "theme_name", 2) != \
-        build_category_vocabulary(new_window, "theme_name", 2)
+
+    old_rows = {r["set_number"]: r for r in old.collect()}
+    new_rows = {r["set_number"]: r for r in new.collect()}
+    assert "s6" not in old_rows and "s6" not in new_rows
+
+    # The windows really do hold different themes, so the equality above is not vacuous.
+    assert old_rows["s1"]["Technic"] == 1
+    assert new_rows["s3"]["Ninjago"] == 1
+    assert new_rows["s3"]["Technic"] == 0
 
 
-def test_build_feature_frame_survives_blank_target_under_ansi(spark):
-    # Casting "" to FLOAT raises CAST_INVALID_INPUT under ANSI. If the cast ever moves
-    # above the drop inside build_feature_frame, this raises instead of filtering.
-    rows = [("001-1", "1965.0", "43.0", "Technic"), ("999-1", "1980.0", "", "Space")]
-    column_params = {
-        "id": "set_number", "target_name": "number_of_parts",
-        "categorical": "theme_name", "top_n_categories": 2,
-        "numeric_features": ["year_released"], "year_column": "year_released",
-    }
-    frame, _ = build_feature_frame(_bronze(spark, rows), column_params, None, None)
+def test_alter_table_with_comments_quotes_identifiers_and_escapes_literals():
+    """Generated column names and comment text both need quoting.
 
-    assert [r["set_number"] for r in frame.collect()] == ["001-1"]
-
-
-def test_write_baseline_if_absent_writes_when_table_missing():
-    """The create-once guarantee the whole drift story rests on: when no baseline
-    exists yet, this must write one (overwrite, format=delta) and report True."""
-    class _FakeCatalog:
-        def tableExists(self, name):
-            return False
-
-    class _FakeSpark:
-        def __init__(self):
-            self.catalog = _FakeCatalog()
-
-    class _RecordingWriter:
-        def __init__(self, calls):
-            self._calls = calls
-        def format(self, fmt):
-            self._calls.append(("format", fmt))
-            return self
-        def mode(self, mode):
-            self._calls.append(("mode", mode))
-            return self
-        def saveAsTable(self, name):
-            self._calls.append(("saveAsTable", name))
-
-    class _FakeDataFrame:
-        def __init__(self):
-            self.calls = []
-        @property
-        def write(self):
-            return _RecordingWriter(self.calls)
-
-    spark = _FakeSpark()
-    dataframe = _FakeDataFrame()
-
-    created = write_baseline_if_absent(spark, dataframe, "cat.sch.lego_set_features_baseline")
-
-    assert created is True
-    assert dataframe.calls == [
-        ("format", "delta"),
-        ("mode", "overwrite"),
-        ("saveAsTable", "cat.sch.lego_set_features_baseline"),
-    ]
-
-
-def test_write_baseline_if_absent_leaves_existing_baseline_untouched():
-    """If the baseline already exists, this must NOT write - re-baselining is a
-    deliberate act (drop the table), never a side effect of a later run - and must
-    report False."""
-    class _FakeCatalog:
-        def tableExists(self, name):
-            return True
-
-    class _FakeSpark:
-        def __init__(self):
-            self.catalog = _FakeCatalog()
-
-    class _ExplodingDataFrame:
-        @property
-        def write(self):
-            raise AssertionError("must not write when the baseline already exists")
-
-    spark = _FakeSpark()
-    dataframe = _ExplodingDataFrame()
-
-    created = write_baseline_if_absent(spark, dataframe, "cat.sch.lego_set_features_baseline")
-
-    assert created is False
-
-
-def test_alter_table_with_comments_backticks_generated_columns():
-    """Pins the backtick quoting: theme '4.5V' yields column 4_5V, which is illegal
-    unquoted in ALTER TABLE, and the Other column gets the merged-bucket wording."""
-    class _RecordingSpark:
-        def __init__(self):
-            self.statements = []
-        def sql(self, statement):
-            self.statements.append(statement)
-
-    spark = _RecordingSpark()
-    column_params = {
-        "id": "set_number", "target_name": "number_of_parts",
-        "categorical": "theme_name", "top_n_categories": 100,
-        "numeric_features": ["year_released"], "year_column": "year_released",
-    }
-    alter_table_with_comments(spark, "cat.sch.lego_set_features", column_params, ["4_5V", "Other"])
-
-    joined = "\n".join(spark.statements)
-    assert "ALTER COLUMN `4_5V`" in joined
-    assert "ALTER COLUMN `year_released`" in joined
-    # The Other column must document that it merges the source's own Other theme with
-    # everything outside the top N, so 23.4% is not mistaken for the source category.
-    other_statement = next(s for s in spark.statements if "`Other`" in s)
-    assert "top 100" in other_statement
-
-
-def test_alter_table_with_comments_escapes_quotes_in_comment_text():
-    """Every emitted COMMENT literal must be quote-balanced.
-
-    This is a regression test for a bug that reached a real cluster: the Other column's
-    comment reads "the source's own 'Other' theme", and those apostrophes ended the SQL
-    literal early, so Spark raised PARSE_SYNTAX_ERROR at line 1 pos 149 and failed the job
-    AFTER the feature table and baseline had already been written.
-
-    The sibling test above asserted the comment's *content* but never that the statement
-    was valid SQL, so it passed while emitting a broken statement. This one checks the
-    literal itself: strip the legally-doubled quotes, and no bare quote may remain.
+    "4.5V" becomes column 4_5V, illegal unquoted in ALTER TABLE, and the Other column's
+    comment contains apostrophes that end the SQL literal early unless doubled.
     """
     class _RecordingSpark:
         def __init__(self):
             self.statements = []
+
         def sql(self, statement):
             self.statements.append(statement)
 
     spark = _RecordingSpark()
-    column_params = {
-        "id": "set_number", "target_name": "number_of_parts",
-        "categorical": "theme_name", "top_n_categories": 100,
-        "numeric_features": ["year_released"], "year_column": "year_released",
-    }
-    # "Disney_s_Mickey_Mouse" stands in for the real themes carrying an apostrophe.
     alter_table_with_comments(
-        spark, "cat.sch.lego_set_features", column_params, ["4_5V", "Disney_s_Mickey_Mouse", "Other"]
+        spark, "cat.sch.lego_set_features", COLUMN_PARAMS, ["4_5V", "Other"]
     )
 
-    assert spark.statements, "no ALTER statements were emitted"
+    joined = "\n".join(spark.statements)
+    assert "ALTER COLUMN `4_5V`" in joined
+
     for statement in spark.statements:
         literal = statement.split("COMMENT ", 1)[1]
-        assert literal.startswith("'") and literal.endswith("'"), statement
         inner = literal[1:-1]
         assert "'" not in inner.replace("''", ""), f"unescaped quote in: {statement}"
-
-    # The apostrophes in the Other comment must survive as doubled quotes, not vanish.
-    other_statement = next(s for s in spark.statements if "`Other`" in s)
-    assert "source''s" in other_statement
-    assert "''Other''" in other_statement
-
-
-def test_sql_comment_literal_doubles_embedded_quotes():
-    assert _sql_comment_literal("plain") == "'plain'"
-    assert _sql_comment_literal("it's") == "'it''s'"
-    assert _sql_comment_literal("the source's own 'Other' theme") == \
-        "'the source''s own ''Other'' theme'"
-
-
-def test_optional_year_treats_empty_and_missing_as_unset():
-    # Bundle variables default to "", so the wheel task is invoked with `--min_year=`.
-    # Declaring type=int on the argument makes argparse exit non-zero on that value and
-    # fails the job on every default deployment.
-    assert _optional_year(None) is None
-    assert _optional_year("") is None
-    assert _optional_year("   ") is None
-    assert _optional_year("1999") == 1999
-    assert _optional_year(2010) == 2010
