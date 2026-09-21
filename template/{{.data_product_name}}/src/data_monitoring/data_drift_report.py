@@ -1,6 +1,6 @@
 """Set up a Databricks Lakehouse data monitor on a Delta table.
 
-Minimal wrapper over ``WorkspaceClient.quality_monitors``. Databricks Lakehouse
+Minimal wrapper over ``WorkspaceClient.data_quality``. Databricks Lakehouse
 Monitoring natively profiles a Unity Catalog table — it computes descriptive /
 data-quality statistics into a ``<table>_profile_metrics`` table, drift statistics
 into ``<table>_drift_metrics``, and generates a monitoring dashboard. This replaces
@@ -18,11 +18,18 @@ import argparse
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import ResourceAlreadyExists
-from databricks.sdk.service.catalog import MonitorSnapshot
+from databricks.sdk.service.dataquality import (
+    DataProfilingConfig,
+    Monitor,
+    Refresh,
+    SnapshotConfig,
+)
 
 from common.utils import get_logger
 
 logger = get_logger()
+
+_OBJECT_TYPE = "table"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -62,7 +69,10 @@ def setup_monitor(
     assets_dir: str,
     baseline_table_name: str | None = None,
 ) -> None:
-    """Creates a Snapshot data monitor on ``table_fqn``, or refreshes it if it exists.
+    """Creates a Snapshot data monitor on ``table_fqn``, or updates it if it exists.
+
+    Fire and forget: the refresh is requested and its state logged, but not waited on.
+    Monitoring is best-effort, so a pending or failed refresh must not fail the job.
 
     Args:
         workspace_client: Authenticated WorkspaceClient.
@@ -73,24 +83,38 @@ def setup_monitor(
             refresh is compared against a fixed distribution instead of only against the
             previous refresh, so drift is monotonic and persistent.
     """
+    # The data-quality API addresses objects by UUID, not by name.
+    table_id = workspace_client.tables.get(full_name=table_fqn).table_id
+    output_schema_id = workspace_client.schemas.get(full_name=output_schema_name).schema_id
+
+    config = DataProfilingConfig(
+        output_schema_id=output_schema_id,
+        assets_dir=assets_dir,
+        baseline_table_name=baseline_table_name,
+        snapshot=SnapshotConfig(),
+    )
+    monitor = Monitor(
+        object_type=_OBJECT_TYPE, object_id=table_id, data_profiling_config=config
+    )
+
     try:
-        workspace_client.quality_monitors.create(
-            table_name=table_fqn,
-            output_schema_name=output_schema_name,
-            assets_dir=assets_dir,
-            snapshot=MonitorSnapshot(),
-            baseline_table_name=baseline_table_name,
-        )
+        workspace_client.data_quality.create_monitor(monitor=monitor)
         logger.info("Created data monitor on %s (metrics -> %s).", table_fqn, output_schema_name)
     except ResourceAlreadyExists:
-        logger.info("Monitor already exists on %s; updating it and triggering a refresh.", table_fqn)
-        workspace_client.quality_monitors.update(
-            table_name=table_fqn,
-            output_schema_name=output_schema_name,
-            snapshot=MonitorSnapshot(),
-            baseline_table_name=baseline_table_name,
+        workspace_client.data_quality.update_monitor(
+            object_type=_OBJECT_TYPE,
+            object_id=table_id,
+            monitor=monitor,
+            update_mask="data_profiling_config",
         )
-        workspace_client.quality_monitors.run_refresh(table_name=table_fqn)
+        logger.info("Updated data monitor on %s.", table_fqn)
+
+    refresh = workspace_client.data_quality.create_refresh(
+        object_type=_OBJECT_TYPE,
+        object_id=table_id,
+        refresh=Refresh(object_type=_OBJECT_TYPE, object_id=table_id),
+    )
+    logger.info("Requested refresh for %s (state: %s).", table_fqn, refresh.state)
 
 
 def main() -> None:
