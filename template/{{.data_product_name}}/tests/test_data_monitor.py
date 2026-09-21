@@ -64,9 +64,19 @@ def test_updates_existing_monitor_so_the_baseline_is_attached():
     assert kwargs["monitor"].data_profiling_config.baseline_table_name == BASELINE
 
 
-def test_requests_a_refresh_without_waiting():
-    """Fire and forget: the refresh state is logged, never polled."""
+def test_create_does_not_request_a_redundant_refresh():
+    """Databricks refreshes a newly created monitor itself."""
     client = _client()
+
+    setup_monitor(client, TABLE, SCHEMA, ASSETS_DIR)
+
+    client.data_quality.create_refresh.assert_not_called()
+
+
+def test_update_requests_a_refresh_without_waiting():
+    """An update changes config only, so metrics need an explicit recompute."""
+    client = _client()
+    client.data_quality.create_monitor.side_effect = ResourceAlreadyExists("exists")
 
     setup_monitor(client, TABLE, SCHEMA, ASSETS_DIR)
 

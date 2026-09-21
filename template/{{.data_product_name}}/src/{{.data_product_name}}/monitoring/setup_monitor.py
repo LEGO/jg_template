@@ -38,10 +38,11 @@ def create_or_update_monitor(
     output_schema_name: str,
     assets_dir: str,
 ) -> None:
-    """Create or update a data-quality monitor on ``table_name``, then request a refresh.
+    """Create or update a data-quality monitor on ``table_name``.
 
-    Fire and forget: the refresh is requested and its state logged, but not waited on.
-    Monitoring is best-effort, so a pending or failed refresh must not fail the job.
+    A newly created monitor is refreshed by Databricks, so only the update path requests
+    one. Fire and forget: the refresh state is logged, never waited on — monitoring is
+    best-effort and a pending or failed refresh must not fail the job.
 
     Args:
         workspace_client: Databricks workspace client.
@@ -55,28 +56,26 @@ def create_or_update_monitor(
 
     config = _data_profiling_config(output_schema_id=output_schema_id, assets_dir=assets_dir)
 
+    monitor = Monitor(
+        object_type=_OBJECT_TYPE, object_id=table_id, data_profiling_config=config
+    )
+
     try:
-        workspace_client.data_quality.create_monitor(
-            monitor=Monitor(
-                object_type=_OBJECT_TYPE,
-                object_id=table_id,
-                data_profiling_config=config,
-            )
-        )
+        workspace_client.data_quality.create_monitor(monitor=monitor)
+        # Databricks refreshes a newly created monitor itself.
         logger.info(f"Created monitor for '{table_name}'")
+        return
     except ResourceAlreadyExists:
         workspace_client.data_quality.update_monitor(
             object_type=_OBJECT_TYPE,
             object_id=table_id,
-            monitor=Monitor(
-                object_type=_OBJECT_TYPE,
-                object_id=table_id,
-                data_profiling_config=config,
-            ),
+            monitor=monitor,
             update_mask="data_profiling_config",
         )
         logger.info(f"Updated monitor for '{table_name}'")
 
+    # An update changes config only; metrics need an explicit recompute, and no schedule
+    # is set on the monitor so nothing else triggers one.
     refresh = workspace_client.data_quality.create_refresh(
         object_type=_OBJECT_TYPE,
         object_id=table_id,

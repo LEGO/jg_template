@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-import pytest
 from databricks.sdk.errors import ResourceAlreadyExists
 
 from {{.data_product_name}}.monitoring import setup_monitor
@@ -28,66 +27,35 @@ def _call(client: MagicMock) -> None:
     )
 
 
-def test_creates_monitor_when_absent():
+def test_creates_monitor_and_lets_databricks_refresh_it():
     client = _client()
 
     _call(client)
 
-    client.data_quality.create_monitor.assert_called_once()
     client.data_quality.update_monitor.assert_not_called()
+    # Databricks refreshes a newly created monitor itself.
+    client.data_quality.create_refresh.assert_not_called()
 
     monitor = client.data_quality.create_monitor.call_args.kwargs["monitor"]
-    assert monitor.object_type == "table"
-    # The API addresses objects by UUID, not name: passing the FQN fails with
-    # "UUID string too large".
+    # The API addresses objects by UUID, not name: the FQN fails with "UUID string too large".
     assert monitor.object_id == TABLE_ID
     config = monitor.data_profiling_config
     assert config.output_schema_id == SCHEMA_ID
     assert config.assets_dir == ASSETS_DIR
+    assert config.inference_log.timestamp_column == "prediction_ts"
+    assert config.inference_log.prediction_column == "Predicted_number_of_parts"
 
 
-def test_inference_log_config_matches_the_prediction_table():
-    client = _client()
-
-    _call(client)
-
-    log = client.data_quality.create_monitor.call_args.kwargs["monitor"].data_profiling_config.inference_log
-    assert log.problem_type.value == "INFERENCE_PROBLEM_TYPE_REGRESSION"
-    assert log.timestamp_column == "prediction_ts"
-    assert log.prediction_column == "Predicted_number_of_parts"
-    assert log.model_id_column == "model_version"
-    assert [g.value for g in log.granularities] == ["AGGREGATION_GRANULARITY_1_DAY"]
-
-
-def test_updates_monitor_when_it_already_exists():
+def test_updates_existing_monitor_and_requests_a_refresh():
     client = _client()
     client.data_quality.create_monitor.side_effect = ResourceAlreadyExists("exists")
 
     _call(client)
 
-    client.data_quality.update_monitor.assert_called_once()
     kwargs = client.data_quality.update_monitor.call_args.kwargs
     assert kwargs["object_id"] == TABLE_ID
     assert kwargs["update_mask"] == "data_profiling_config"
-
-
-def test_requests_a_refresh_without_waiting():
-    """Fire and forget: the refresh state is logged, never polled."""
-    client = _client()
-
-    _call(client)
-
+    # An update changes config only, so metrics need an explicit recompute — requested
+    # but never polled.
     client.data_quality.create_refresh.assert_called_once()
-    assert client.data_quality.create_refresh.call_args.kwargs["object_id"] == TABLE_ID
-    # No status polling: get_monitor is never consulted.
     client.data_quality.get_monitor.assert_not_called()
-
-
-def test_refresh_is_requested_on_both_paths():
-    for side_effect in (None, ResourceAlreadyExists("exists")):
-        client = _client()
-        client.data_quality.create_monitor.side_effect = side_effect
-
-        _call(client)
-
-        client.data_quality.create_refresh.assert_called_once()

@@ -71,8 +71,9 @@ def setup_monitor(
 ) -> None:
     """Creates a Snapshot data monitor on ``table_fqn``, or updates it if it exists.
 
-    Fire and forget: the refresh is requested and its state logged, but not waited on.
-    Monitoring is best-effort, so a pending or failed refresh must not fail the job.
+    A newly created monitor is refreshed by Databricks, so only the update path requests
+    one. Fire and forget: the refresh state is logged, never waited on — monitoring is
+    best-effort and a pending or failed refresh must not fail the job.
 
     Args:
         workspace_client: Authenticated WorkspaceClient.
@@ -99,7 +100,9 @@ def setup_monitor(
 
     try:
         workspace_client.data_quality.create_monitor(monitor=monitor)
+        # Databricks refreshes a newly created monitor itself.
         logger.info("Created data monitor on %s (metrics -> %s).", table_fqn, output_schema_name)
+        return
     except ResourceAlreadyExists:
         workspace_client.data_quality.update_monitor(
             object_type=_OBJECT_TYPE,
@@ -109,6 +112,8 @@ def setup_monitor(
         )
         logger.info("Updated data monitor on %s.", table_fqn)
 
+    # An update changes config only; metrics need an explicit recompute, and no schedule
+    # is set on the monitor so nothing else triggers one.
     refresh = workspace_client.data_quality.create_refresh(
         object_type=_OBJECT_TYPE,
         object_id=table_id,
