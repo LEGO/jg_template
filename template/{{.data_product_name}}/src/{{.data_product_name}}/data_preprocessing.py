@@ -32,17 +32,8 @@ Data Monitoring 1) Basic data monitoring is implemented by logging the number of
 def fix_data_types(dataframe: DataFrame, target_name: str, numeric_features: List[str]) -> DataFrame:
     """Casts the string-typed bronze columns to numerics.
 
-    Bronze is a faithful raw copy: every column is STRING, and the numeric ones carry a
-    trailing '.0' (e.g. "1965.0").
-
-    Expects drop_invalid_rows to have run first: under ANSI mode — the default on
-    Spark 4 / DBR 17.x, which these clusters run — casting "" to FLOAT raises
-    CAST_INVALID_INPUT, so blank rows must be gone before this runs.
-
-    The integer features go via double deliberately. Under ANSI mode a direct
-    string -> int cast on "1965.0" raises CAST_INVALID_INPUT and fails the job. Do not
-    collapse this into a single cast: it would still pass the unit tests on local
-    pyspark, where ANSI is off.
+    Integers go via double: under ANSI mode a direct string -> int cast on "1965.0"
+    fails. Expects drop_invalid_rows to have run first.
     """
     dataframe = dataframe.withColumn(target_name, F.col(target_name).cast(FloatType()))
     for column in numeric_features:
@@ -53,10 +44,7 @@ def fix_data_types(dataframe: DataFrame, target_name: str, numeric_features: Lis
 def drop_invalid_rows(dataframe: DataFrame, id_column: str, target_name: str) -> DataFrame:
     """Drops rows with no usable id or target, while both are still raw text.
 
-    Bronze holds 7 theme-only rows where every field except the theme is blank, and empty
-    bronze fields are empty strings rather than NULL — so both are checked. This must run
-    BEFORE fix_data_types: under ANSI mode (the default on DBR 17.x) casting "" to FLOAT
-    raises CAST_INVALID_INPUT, so invalid rows have to go while the columns are text.
+    Empty bronze fields are empty strings, not NULL, so both are checked.
     """
     def _present(column: str):
         return F.col(column).isNotNull() & (F.trim(F.col(column)) != "")
@@ -65,20 +53,14 @@ def drop_invalid_rows(dataframe: DataFrame, id_column: str, target_name: str) ->
 
 
 def filter_buildable_sets(dataframe: DataFrame, target_name: str) -> DataFrame:
-    """Keeps only sets that actually contain parts.
-
-    Drops 4,384 LEGO-branded merchandise rows (key chains, books, plush toys) whose true
-    part count is 0. They make the target bimodal and dilute the drift signal.
-    """
+    """Keeps only sets that contain parts, dropping zero-part merchandise."""
     return dataframe.where(F.col(target_name) > 0)
 
 
 def deduplicate_on_key(dataframe: DataFrame, id_column: str) -> DataFrame:
     """Leaves one row per id.
 
-    Defensive: with the buildable-sets filter applied there are no duplicates left in
-    this dataset, but ``upsert_delta_table`` MERGEs on this key and Delta MERGE fails
-    when several source rows match one target row — an obscure and expensive failure.
+    ``upsert_delta_table`` MERGEs on this key, and Delta MERGE fails on duplicates.
     """
     return dataframe.dropDuplicates([id_column])
 
@@ -86,12 +68,8 @@ def deduplicate_on_key(dataframe: DataFrame, id_column: str) -> DataFrame:
 def to_column_name(value: str) -> str:
     """Turns a category value into a Spark-safe column name.
 
-    LEGO theme names contain '.', ':', '&', '-' and '!', and a '.' in a column name is
-    read by Spark as nested-field access — so "4.5V" would break ``DataFrame.select``.
-    Any run of non-alphanumerics therefore collapses to a single underscore. A single
-    space becomes an underscore ("Star Wars" -> "Star_Wars"), capitalisation is
-    preserved, and a run of several separators collapses to just one, e.g.
-    "A  B" -> "A_B" rather than "A__B".
+    Any run of non-alphanumerics collapses to one underscore. A '.' in a column name is
+    read by Spark as nested-field access, so "4.5V" would break ``select``.
     """
     return re.sub(r"_+", "_", re.sub(r"[^A-Za-z0-9]+", "_", value.strip())).strip("_")
 
@@ -104,17 +82,9 @@ def build_category_vocabulary(
 ) -> List[str]:
     """Returns the ``top_n`` most common category values, plus the residual label.
 
-    Call this on the WHOLE dataset, before any year window is applied. Deriving the
-    vocabulary after windowing would give each drift-replay run a different set of
-    columns — 188 themes appear only after 2010 — churning the feature-table schema and
-    breaking both the upsert and the Lakehouse monitor.
-
-    Ties are broken by value ascending so the vocabulary is reproducible: the real 100th
-    and 101st themes both have 39 sets.
-
-    ``other_label`` is appended only if it did not already win a slot on count. In this
-    dataset it does win one (87 sets, rank 46), and it then absorbs the residual
-    categories as well — the two are deliberately merged.
+    Call on the WHOLE dataset, before any year window, or each windowed run gets a
+    different set of columns. Ties break on value ascending so the result is reproducible.
+    ``other_label`` is appended only if it did not already win a slot on count.
     """
     rows = (
         dataframe.groupBy(categorical)
@@ -176,9 +146,7 @@ def apply_year_window(
 ) -> DataFrame:
     """Restricts rows to a release-year window.
 
-    This is the drift-replay lever. Leave both bounds unset for the full dataset; set
-    them to successive eras between runs and the Lakehouse monitor reports real
-    historical drift against the baseline. Apply this AFTER the vocabulary is built.
+    Leave both bounds unset for the full dataset. Apply AFTER the vocabulary is built.
     """
     if min_year is not None:
         dataframe = dataframe.where(F.col(year_column) >= min_year)
@@ -195,15 +163,8 @@ def build_feature_frame(
 ) -> Tuple[DataFrame, List[str]]:
     """Runs the ordered feature pipeline and returns the frame plus its one-hot columns.
 
-    Two orderings here are load-bearing and must not be rearranged:
-
-    1. Invalid rows are dropped BEFORE casting. Under ANSI mode (the default on DBR 17.x)
-       casting "" to FLOAT raises CAST_INVALID_INPUT, so blanks must go while the columns
-       are still text.
-    2. The category vocabulary is built from the WHOLE dataset BEFORE the year window is
-       applied. 188 themes appear only after 2010; a post-window vocabulary would give
-       each drift-replay run a different set of columns, churning the feature-table schema
-       and breaking both the upsert and the Lakehouse monitor.
+    Two orderings are load-bearing; reversing either fails silently:
+    drop invalid rows BEFORE casting, and build the vocabulary BEFORE the year window.
     """
     id_column = column_params["id"]
     target_name = column_params["target_name"]
@@ -215,18 +176,12 @@ def build_feature_frame(
     dataframe = filter_buildable_sets(dataframe, target_name=target_name)
     dataframe = deduplicate_on_key(dataframe, id_column=id_column)
 
-    # Built from the whole dataset, BEFORE the year window, so the feature schema is
-    # identical across drift-replay runs.
     vocabulary = build_category_vocabulary(
         dataframe, categorical=categorical, top_n=column_params["top_n_categories"]
     )
     logger.info("Category vocabulary size: %s", len(vocabulary))
 
-    # numeric_features[0] is used as the year column by positional convention (see
-    # model_config.yml: numeric_features: ["year_released"]). If a future config ever
-    # prepends a second numeric feature ahead of it, this would silently window on the
-    # wrong column with no error.
-    dataframe = apply_year_window(dataframe, numeric_features[0], min_year, max_year)
+    dataframe = apply_year_window(dataframe, column_params["year_column"], min_year, max_year)
     dataframe, encoded_columns = create_category_onehot_encodings(
         dataframe, categorical=categorical, vocabulary=vocabulary
     )
@@ -238,9 +193,7 @@ def build_feature_frame(
 def write_baseline_if_absent(spark, dataframe: DataFrame, baseline_table_name: str) -> bool:
     """Writes the monitor's reference snapshot once, and never touches it again.
 
-    Create-once is the point: the FIRST pipeline run defines the reference distribution
-    the data monitor compares every later refresh against. Re-baselining is a deliberate
-    act — drop this table.
+    Re-baselining means dropping the table.
 
     Returns:
         True if the baseline was created by this call, False if it already existed.
@@ -257,12 +210,8 @@ def write_baseline_if_absent(spark, dataframe: DataFrame, baseline_table_name: s
 def _sql_comment_literal(comment: str) -> str:
     """Renders comment text as a single-quoted SQL literal, escaping embedded quotes.
 
-    Spark SQL escapes a single quote by doubling it. Comment text is assembled from prose
-    and from category values, and either can contain an apostrophe: the Other column's
-    comment says "the source's own 'Other' theme", and several real LEGO theme names carry
-    one too ("Disney's Mickey Mouse", "Pharaoh's Quest"). An unescaped apostrophe ends the
-    literal early and Spark raises PARSE_SYNTAX_ERROR, which fails the job after the
-    feature table has already been written.
+    Spark escapes a single quote by doubling it; an unescaped one raises
+    PARSE_SYNTAX_ERROR. Category values can contain apostrophes.
     """
     return "'" + comment.replace("'", "''") + "'"
 
@@ -305,9 +254,8 @@ def alter_table_with_comments(
 def _optional_year(value: str | None) -> int | None:
     """Normalises a year CLI argument to an int, or None when unset.
 
-    Bundle variables arrive as strings and default to empty, so the wheel task is invoked
-    with `--min_year=`. Declaring `type=int` on the argument would make argparse exit
-    non-zero on that empty value and fail the job on every default deployment.
+    Bundle variables default to empty, so the task gets `--min_year=`. `type=int` on the
+    argument would make argparse exit non-zero on that.
     """
     if value is None or str(value).strip() == "":
         return None

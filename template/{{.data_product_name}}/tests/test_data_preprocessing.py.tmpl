@@ -238,7 +238,7 @@ def test_feature_schema_is_identical_across_year_windows(spark):
     column_params = {
         "id": "set_number", "target_name": "number_of_parts",
         "categorical": "theme_name", "top_n_categories": 2,
-        "numeric_features": ["year_released"],
+        "numeric_features": ["year_released"], "year_column": "year_released",
     }
     old, old_cols = build_feature_frame(_bronze(spark, rows), column_params, 1949, 1999)
     new, new_cols = build_feature_frame(_bronze(spark, rows), column_params, 2000, 2023)
@@ -266,7 +266,7 @@ def test_build_feature_frame_survives_blank_target_under_ansi(spark):
     column_params = {
         "id": "set_number", "target_name": "number_of_parts",
         "categorical": "theme_name", "top_n_categories": 2,
-        "numeric_features": ["year_released"],
+        "numeric_features": ["year_released"], "year_column": "year_released",
     }
     frame, _ = build_feature_frame(_bronze(spark, rows), column_params, None, None)
 
@@ -354,7 +354,7 @@ def test_alter_table_with_comments_backticks_generated_columns():
     column_params = {
         "id": "set_number", "target_name": "number_of_parts",
         "categorical": "theme_name", "top_n_categories": 100,
-        "numeric_features": ["year_released"],
+        "numeric_features": ["year_released"], "year_column": "year_released",
     }
     alter_table_with_comments(spark, "cat.sch.lego_set_features", column_params, ["4_5V", "Other"])
 
@@ -389,7 +389,7 @@ def test_alter_table_with_comments_escapes_quotes_in_comment_text():
     column_params = {
         "id": "set_number", "target_name": "number_of_parts",
         "categorical": "theme_name", "top_n_categories": 100,
-        "numeric_features": ["year_released"],
+        "numeric_features": ["year_released"], "year_column": "year_released",
     }
     # "Disney_s_Mickey_Mouse" stands in for the real themes carrying an apostrophe.
     alter_table_with_comments(

@@ -4,6 +4,7 @@ columns:
   categorical: "theme_name"
   top_n_categories: 100
   numeric_features: ["year_released"]
+  year_column: "year_released"
   prediction_name: "Predicted_number_of_parts"
 default_hgb:
   max_iter: 200
