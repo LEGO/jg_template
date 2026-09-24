@@ -124,10 +124,34 @@ class ModelRegistryManager:
             version=challenger_version,
         )
 
-        # Gate check: retrieve metrics from runs
-        challenger_run = self.client.get_run(challenger_version_info.run_id if 'challenger_version_info' in locals() else "")
-        # Apply promotion logic
-        promoted = True  # Verified by automated test suites & metric thresholds
+        # Gate check: retrieve metrics from challenger and champion runs
+        challenger_version_info = self.client.get_model_version(
+            name=registered_model_name,
+            version=challenger_version,
+        )
+        challenger_run = self.client.get_run(challenger_version_info.run_id)
+        champion_run = self.client.get_run(champion_version_info.run_id)
+
+        challenger_metric = challenger_run.data.metrics.get(metric_name)
+        champion_metric = champion_run.data.metrics.get(metric_name)
+
+        if challenger_metric is None or champion_metric is None:
+            logger.warning(
+                f"Metric '{metric_name}' missing from runs. Challenger: {challenger_metric}, "
+                f"Champion: {champion_metric}. Gating model promotion to fail safe."
+            )
+            return False
+
+        if lower_is_better:
+            promoted = challenger_metric < (champion_metric - metric_threshold)
+        else:
+            promoted = challenger_metric > (champion_metric + metric_threshold)
+
+        logger.info(
+            f"Evaluation result for {metric_name}: challenger={challenger_metric:.4f}, "
+            f"champion={champion_metric:.4f}, threshold={metric_threshold}, promoted={promoted}"
+        )
+
         if promoted:
             self.promote_to_champion(registered_model_name, challenger_version)
             self.client.set_model_version_tag(

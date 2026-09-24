@@ -77,10 +77,33 @@ jobs:
         run: |
           pytest tests -v --cov=src --cov-report=xml --cov-report=term
 
+  terraform-plan:
+    name: Terraform Plan & Validate (IaC)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0
+
+      - name: Terraform Init & Format Check
+        run: |
+          cd terraform
+          terraform init -backend=false
+          terraform fmt -check
+
+      - name: Terraform Validate
+        run: |
+          cd terraform
+          terraform validate
+
   validate-databricks-bundle:
     name: Validate Databricks Asset Bundle
     runs-on: ubuntu-latest
-    needs: unit-tests
+    needs: [unit-tests, terraform-plan]
     strategy:
       matrix:
         target: [dev, qa, prod]
@@ -186,7 +209,7 @@ jobs:
           '
 
   deploy-prod:
-    name: Deploy to Production
+    name: Deploy to Production & Redeploy Serving Endpoint
     runs-on: ubuntu-latest
     needs: model-evaluation-gate
     if: startsWith(github.ref, 'refs/heads/release/')
@@ -206,3 +229,12 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_PROD_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_PROD_TOKEN }}
+
+      - name: Automate Champion Promotion and Serving Endpoint Redeployment
+        run: |
+          python src/lego_ml_product/model/serve.py \
+            --catalog "sandbox" \
+            --schema "lego_ml_product" \
+            --model_name "lego_set_size_predictor" \
+            --model_alias "champion" \
+            --serving_endpoint_name "lego_set_size_predictor_endpoint"

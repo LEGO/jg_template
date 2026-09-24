@@ -1,0 +1,53 @@
+resources:
+  jobs:
+    model_and_data_monitoring_job:
+      name: ${var.job_name_prefix}${var.lego_ml_product_model_name}_monitoring_job
+
+      # Automated scheduling for model and data drift monitoring pipeline
+      schedule:
+        quartz_cron_expression: "0 0 4 ? * *" # Daily at 04:00 UTC
+        timezone_id: Europe/Copenhagen
+
+      # Automated alerting on failure and degradation
+      email_notifications:
+        on_failure:
+          - ai-engineering-alerts@lego.com
+        on_start: []
+        on_success: []
+
+      tasks:
+        - task_key: setup_lakehouse_monitor
+          python_wheel_task:
+            package_name: lego_ml_product
+            entry_point: setup_monitor
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.lego_ml_product_model_schema.name}
+              table_name: lego_set_predictions
+              baseline_table: ${var.lego_ml_product_feature_baseline_table}
+          job_cluster_key: monitoring_cluster
+          libraries:
+            - whl: ./dist/*.whl
+
+        - task_key: evaluate_drift_and_alert
+          python_wheel_task:
+            package_name: lego_ml_product
+            entry_point: data_drift_report
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.lego_ml_product_model_schema.name}
+              table_name: lego_set_predictions
+              drift_threshold: "0.2"
+              alert_email: ai-engineering-alerts@lego.com
+          job_cluster_key: monitoring_cluster
+          libraries:
+            - whl: ./dist/*.whl
+          depends_on:
+            - task_key: setup_lakehouse_monitor
+
+      job_clusters:
+        - job_cluster_key: monitoring_cluster
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: Standard_D4ds_v5
+            num_workers: 2

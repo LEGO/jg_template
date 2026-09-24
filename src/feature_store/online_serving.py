@@ -47,15 +47,22 @@ class OnlineFeatureStoreManager:
 
         logger.info(f"Configuring live online feature table for {full_table_name}")
         try:
-            # Databricks Online Tables creation via Databricks SDK
             from databricks.sdk.service.catalog import (
                 OnlineTableSpec,
                 OnlineTableSpecTriggeredSchedulingPolicy,
             )
             online_table_name = f"{full_table_name}_online"
             logger.info(f"Syncing feature table to online serving store: {online_table_name}")
+            spec = OnlineTableSpec(
+                primary_key_columns=pks,
+                source_table_full_name=full_table_name,
+                run_triggered=OnlineTableSpecTriggeredSchedulingPolicy(),
+            )
+            if hasattr(self.w, "online_tables"):
+                self.w.online_tables.create(name=online_table_name, spec=spec)
+                logger.info(f"Online table {online_table_name} provisioned successfully")
         except Exception as e:
-            logger.warning(f"Online table provisioning noted: {e}")
+            logger.warning(f"Online table provisioning noted or already exists: {e}")
 
     def lookup_features_for_serving(
         self,
