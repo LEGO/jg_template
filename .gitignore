@@ -9,3 +9,8 @@ docs/superpowers/*
 /dist/
 /.pytest_cache/
 !/template/{{.data_product_name}}/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
