@@ -1,0 +1,118 @@
+"""Unit tests for Model Evaluation metrics computation and automated promotion gates."""
+
+import numpy as np
+import pandas as pd
+from unittest.mock import MagicMock, patch
+from lego_ml_product.model.evaluate_model import (
+    compute_evaluation_metrics,
+    evaluate_model_performance,
+    evaluate_and_gate_promotion,
+)
+
+
+def test_compute_evaluation_metrics():
+    y_true = np.array([100.0, 200.0, 300.0])
+    y_pred = np.array([110.0, 190.0, 310.0])
+
+    metrics = compute_evaluation_metrics(y_true, y_pred)
+    assert "rmse" in metrics
+    assert "mae" in metrics
+    assert "r2_score" in metrics
+    assert metrics["rmse"] == 10.0
+    assert metrics["mae"] == 10.0
+    assert metrics["r2_score"] > 0.95
+
+
+def test_evaluate_model_performance():
+    fake_model = MagicMock()
+    fake_model.predict.return_value = np.array([100.0, 200.0])
+
+    data = pd.DataFrame({
+        "set_id": [1, 2],
+        "feature_1": [10.0, 20.0],
+        "pieces": [105.0, 195.0],
+    })
+
+    metrics = evaluate_model_performance(
+        model=fake_model,
+        evaluation_data=data,
+        target_column="pieces",
+        id_column="set_id",
+    )
+
+    assert "rmse" in metrics
+    assert metrics["rmse"] == 5.0
+    fake_model.predict.assert_called_once()
+
+
+def test_evaluate_and_gate_promotion_passes_when_beating_champion():
+    fake_client = MagicMock()
+    fake_model = MagicMock()
+    fake_model.predict.return_value = np.array([100.0, 200.0])
+
+    data = pd.DataFrame({
+        "set_id": [1, 2],
+        "feature_1": [10.0, 20.0],
+        "pieces": [102.0, 198.0],
+    })
+
+    with patch("mlflow.pyfunc.load_model", return_value=fake_model), \
+         patch("mlflow.log_metric") as mock_log_metric, \
+         patch("lego_ml_product.model.evaluate_model.get_metric_from_model_alias", return_value=15.0), \
+         patch("lego_ml_product.model.evaluate_model.set_champion_alias_on_logged_model") as mock_set_champion:
+
+        is_promoted, candidate_metrics, champion_metrics = evaluate_and_gate_promotion(
+            candidate_model_uri="models:/test_model/1",
+            registered_model_name="test_model",
+            evaluation_data=data,
+            target_column="pieces",
+            id_column="set_id",
+            candidate_version="2",
+            client=fake_client,
+        )
+
+        assert is_promoted is True
+        assert candidate_metrics["rmse"] < champion_metrics["rmse"]
+        mock_log_metric.assert_called()
+        mock_set_champion.assert_called_once()
+        fake_client.set_model_version_tag.assert_called_with(
+            name="test_model",
+            version="2",
+            key="promotion_decision",
+            value="PROMOTED_CHAMPION",
+        )
+
+
+def test_evaluate_and_gate_promotion_rejects_when_inferior():
+    fake_client = MagicMock()
+    fake_model = MagicMock()
+    fake_model.predict.return_value = np.array([50.0, 350.0])
+
+    data = pd.DataFrame({
+        "set_id": [1, 2],
+        "feature_1": [10.0, 20.0],
+        "pieces": [100.0, 200.0],
+    })
+
+    with patch("mlflow.pyfunc.load_model", return_value=fake_model), \
+         patch("mlflow.log_metric"), \
+         patch("lego_ml_product.model.evaluate_model.get_metric_from_model_alias", return_value=10.0), \
+         patch("lego_ml_product.model.evaluate_model.set_champion_alias_on_logged_model") as mock_set_champion:
+
+        is_promoted, candidate_metrics, champion_metrics = evaluate_and_gate_promotion(
+            candidate_model_uri="models:/test_model/2",
+            registered_model_name="test_model",
+            evaluation_data=data,
+            target_column="pieces",
+            id_column="set_id",
+            candidate_version="2",
+            client=fake_client,
+        )
+
+        assert is_promoted is False
+        mock_set_champion.assert_not_called()
+        fake_client.set_registered_model_alias.assert_called_with(
+            name="test_model",
+            alias="challenger",
+            version="2",
+        )

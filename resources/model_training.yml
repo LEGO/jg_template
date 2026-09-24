@@ -22,6 +22,19 @@ resources:
           libraries:
             - whl: ./dist/*.whl
 
+        - task_key: evaluate_model
+          python_wheel_task:
+            package_name: lego_ml_product
+            entry_point: model_evaluation_job
+            named_parameters:
+              candidate_model_uri: "models:/${var.catalog}.${resources.schemas.lego_ml_product_model_schema.name}.${var.lego_ml_product_model_name}@challenger"
+              registered_model_name: "${var.catalog}.${resources.schemas.lego_ml_product_model_schema.name}.${var.lego_ml_product_model_name}"
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ./dist/*.whl
+          depends_on:
+            - task_key: train_model
+
         - task_key: batch_prediction_task
           python_wheel_task:
             package_name: lego_ml_product
@@ -37,7 +50,7 @@ resources:
           libraries:
             - whl: ./dist/*.whl
           depends_on:
-            - task_key: train_model
+            - task_key: evaluate_model
 
       job_clusters:
         - job_cluster_key: job_cluster

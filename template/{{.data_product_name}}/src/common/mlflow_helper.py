@@ -163,3 +163,35 @@ def set_champion_alias_on_logged_model(
     )
 
     tag_model_as_template_generated(fully_qualified_model_name, version=latest_version.version)
+
+
+def get_metric_from_model_alias(
+    model_name: str,
+    alias: str = "champion",
+    metric_name: str = "rmse",
+    client: Optional[mlflow.MlflowClient] = None,
+) -> Optional[float]:
+    """Retrieves a metric value from a registered model version identified by alias.
+
+    Args:
+        model_name: Fully qualified model name in MLflow Model Registry.
+        alias: Model alias (e.g., 'champion', 'challenger').
+        metric_name: Name of the metric to look up.
+        client: Optional MLflowClient instance.
+
+    Returns:
+        Optional[float]: Metric value or None if not found.
+    """
+    client = client or mlflow.MlflowClient()
+    try:
+        model_version = client.get_model_version_by_alias(name=model_name, alias=alias)
+        run = client.get_run(model_version.run_id)
+        if metric_name in run.data.metrics:
+            return float(run.data.metrics[metric_name])
+        # Fallback to tag if logged as tag
+        if metric_name in model_version.tags:
+            return float(model_version.tags[metric_name])
+        return None
+    except Exception as e:
+        logger.warning(f"Could not retrieve {metric_name} for {model_name}@{alias}: {e}")
+        return None
