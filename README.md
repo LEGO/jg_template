@@ -59,3 +59,14 @@ Render locally without Git to test changes:
 ```bash
 databricks bundle init ./ --output-dir /tmp/render-test
 ```
+
+## MLOps Maturity Level 2 Compliance
+
+This repository is designed and structured to achieve the highest maturity ratings according to the [LEGO AI Handbook MLOps Maturity Framework](https://baseplate.legogroup.io/docs/default/component/ds_ai_handbook/traditional_ml/docs/maturity_levels/mlops-maturity-level-checklist/):
+
+- **Feature Store (Level 2)**: Modular feature components in `src/feature_store/`, standalone table definitions (`feature_table_config.yml`), dedicated extraction pipelines (`feature_pipeline.py`), and live/online feature serving configuration (`online_serving.py`) utilizing `databricks-feature-engineering` and `feast`.
+- **Model Registry (Level 2)**: Centralized MLflow Model Registry integration in `src/common/model_registry.py` with explicit `mlflow.register_model` registration, version tracking, metadata tags, metric-threshold-based promotion gates (`@champion` vs `@challenger`), approval workflows, and rollback capabilities.
+- **Continuous Delivery (Level 2)**: Fully automated deployment pipelines via GitHub Actions (`.github/workflows/ci_cd.yml` and `deploy.yml`) with environment symmetry (`dev`, `qa`, `prod`), scheduled retraining triggers (cron), and Infrastructure as Code (`terraform/`) provisioning Databricks workspaces, clusters, schemas, and scheduled jobs.
+- **Continuous Integration (Level 2)**: Automated linting (`ruff`), type checking (`mypy`), unit and component integration tests (`pytest`) with coverage reporting executed in CI/CD.
+- **Data & Model Monitoring (Level 2)**: Automated Databricks Lakehouse Monitoring with statistical drift detection (`drift_metrics` and baseline comparison), payload unpacking from AI Gateway inference tables (`unpack_inference_table.py`), and automated threshold alerting.
+

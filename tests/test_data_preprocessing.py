@@ -1,0 +1,102 @@
+"""Example tests for the feature-engineering steps (local Spark session)."""
+
+import pytest
+from pyspark.sql import SparkSession
+
+from lego_ml_product.data_preprocessing import (
+    alter_table_with_comments,
+    build_feature_frame,
+)
+
+BRONZE_COLUMNS = ["set_number", "year_released", "number_of_parts", "theme_name"]
+
+COLUMN_PARAMS = {
+    "id": "set_number",
+    "target_name": "number_of_parts",
+    "categorical": "theme_name",
+    "top_n_categories": 2,
+    "numeric_features": ["year_released"],
+    "year_column": "year_released",
+}
+
+
+@pytest.fixture(scope="module")
+def spark():
+    try:
+        session = (
+            SparkSession.builder.appName("test_data_preprocessing")
+            .master("local[1]")
+            .config("spark.sql.shuffle.partitions", "1")
+            # DBR is Spark 4-based and enables ANSI mode by default, whereas local pyspark
+            # disables it. Without this a bad numeric cast passes here and fails on the cluster.
+            .config("spark.sql.ansi.enabled", "true")
+            .getOrCreate()
+        )
+    except RuntimeError as e:
+        pytest.skip(f"Local SparkSession unavailable with Databricks Connect: {e}")
+    yield session
+    session.stop()
+
+
+def _bronze(spark, rows):
+    """Builds an all-STRING frame, matching the real bronze table's contract."""
+    return spark.createDataFrame(rows, BRONZE_COLUMNS)
+
+
+def test_feature_schema_is_stable_across_year_windows(spark):
+    """Covers both load-bearing orderings in build_feature_frame.
+
+    The vocabulary is built from the whole dataset BEFORE the year window, so two disjoint
+    windows must produce identical columns even though their own top-N themes differ.
+    Invalid rows are dropped BEFORE casting, so the blank-target row is filtered rather
+    than raising CAST_INVALID_INPUT under ANSI mode.
+    """
+    rows = [
+        ("s1", "1970.0", "10.0", "Technic"),
+        ("s2", "1970.0", "10.0", "Technic"),
+        ("s3", "2020.0", "10.0", "Ninjago"),
+        ("s4", "2020.0", "10.0", "Ninjago"),
+        ("s5", "2020.0", "10.0", "Friends"),
+        ("s6", "1980.0", "", "Space"),  # valid id, blank target: must be dropped, not raise
+    ]
+    old, old_cols = build_feature_frame(_bronze(spark, rows), COLUMN_PARAMS, 1949, 1999)
+    new, new_cols = build_feature_frame(_bronze(spark, rows), COLUMN_PARAMS, 2000, 2023)
+
+    assert old.columns == new.columns
+    assert old_cols == new_cols
+
+    old_rows = {r["set_number"]: r for r in old.collect()}
+    new_rows = {r["set_number"]: r for r in new.collect()}
+    assert "s6" not in old_rows and "s6" not in new_rows
+
+    # The windows really do hold different themes, so the equality above is not vacuous.
+    assert old_rows["s1"]["Technic"] == 1
+    assert new_rows["s3"]["Ninjago"] == 1
+    assert new_rows["s3"]["Technic"] == 0
+
+
+def test_alter_table_with_comments_quotes_identifiers_and_escapes_literals():
+    """Generated column names and comment text both need quoting.
+
+    "4.5V" becomes column 4_5V, illegal unquoted in ALTER TABLE, and the Other column's
+    comment contains apostrophes that end the SQL literal early unless doubled.
+    """
+    class _RecordingSpark:
+        def __init__(self):
+            self.statements = []
+
+        def sql(self, statement):
+            self.statements.append(statement)
+
+    spark = _RecordingSpark()
+    alter_table_with_comments(
+        spark, "cat.sch.lego_set_features", COLUMN_PARAMS, ["4_5V", "Other"]
+    )
+
+    joined = "\n".join(spark.statements)
+    assert "ALTER COLUMN `4_5V`" in joined
+
+    for statement in spark.statements:
+        literal = statement.split("COMMENT ", 1)[1]
+        inner = literal[1:-1]
+        assert "'" not in inner.replace("''", ""), f"unescaped quote in: {statement}"

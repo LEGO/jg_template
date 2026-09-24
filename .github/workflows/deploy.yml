@@ -1,0 +1,32 @@
+name: Deploy Databricks Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target deployment environment (dev, qa, prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+jobs:
+  deploy:
+    name: Deploy Databricks Asset Bundle
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate Bundle
+        run: databricks bundle validate -t ${{ github.event.inputs.target }}
+
+      - name: Deploy Bundle via Infrastructure as Code
+        run: databricks bundle deploy -t ${{ github.event.inputs.target }}

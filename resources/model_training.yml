@@ -1,0 +1,47 @@
+resources:
+  jobs:
+    model_training_job:
+      name: ${var.job_name_prefix}${var.lego_ml_product_model_name}_training_job
+
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON"
+        timezone_id: Europe/Copenhagen
+
+      tasks:
+        - task_key: train_model
+          python_wheel_task:
+            package_name: lego_ml_product
+            entry_point: model_training_job
+            named_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.lego_ml_product_model_schema.name}
+              model_name: ${var.lego_ml_product_model_name}
+              feature_store_table_name: ${var.lego_ml_product_feature_store_table_name}
+              experiment_path: ${var.lego_ml_product_experiment_name}_model_training
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ./dist/*.whl
+
+        - task_key: batch_prediction_task
+          python_wheel_task:
+            package_name: lego_ml_product
+            entry_point: batch_prediction
+            named_parameters:
+              catalog_name: ${var.catalog}
+              schema_name: ${resources.schemas.lego_ml_product_model_schema.name}
+              model_name: ${var.lego_ml_product_model_name}
+              feature_store_table_name: ${var.lego_ml_product_feature_store_table_name}
+              batch_prediction_table: lego_set_predictions
+              experiment_path: ${var.lego_ml_product_experiment_name}_batch_prediction
+          job_cluster_key: job_cluster
+          libraries:
+            - whl: ./dist/*.whl
+          depends_on:
+            - task_key: train_model
+
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: Standard_D4ds_v5
+            num_workers: 2

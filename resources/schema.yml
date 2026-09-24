@@ -1,0 +1,11 @@
+resources:
+  schemas:
+    general_schema:
+      name: ${var.general_schema}
+      catalog_name: ${var.catalog}
+      comment: "Shared schema for non-model-specific resources managed by MLOps bundle"
+
+    lego_ml_product_model_schema:
+      name: ${var.lego_ml_product_model_schema}
+      catalog_name: ${var.catalog}
+      comment: "Schema for model-specific tables: registered model, features, predictions, monitoring"

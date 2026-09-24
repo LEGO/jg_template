@@ -1,0 +1,35 @@
+# Feature Store Table Configuration
+# Compliant with Level 1 and Level 2 of LEGO AI Handbook Feature Store Maturity Framework:
+# https://baseplate.legogroup.io/docs/default/component/ds_ai_handbook/traditional_ml/docs/maturity_levels/8-mlops-feature-store/
+
+feature_store:
+  name: "lego_set_features"
+  catalog: "sandbox"
+  schema: "lego_ml_product"
+  primary_keys:
+    - "set_id"
+  timestamp_keys:
+    - "feature_timestamp"
+  description: "Curated features for LEGO set size and pricing prediction"
+  online_store:
+    enabled: true
+    provider: "databricks_online_table"
+    spec:
+      primary_key: "set_id"
+      sync_mode: "continuous"
+  features:
+    - name: "pieces"
+      type: "int"
+      description: "Number of pieces in LEGO set"
+    - name: "price"
+      type: "float"
+      description: "Retail price of the LEGO set"
+    - name: "theme_group"
+      type: "string"
+      description: "High-level theme categorization"
+    - name: "year"
+      type: "int"
+      description: "Release year of the set"
+    - name: "minifigures"
+      type: "int"
+      description: "Number of minifigures included"

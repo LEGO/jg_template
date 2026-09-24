@@ -1,0 +1,84 @@
+# The automation bundle is compliant with level 2 of https://baseplate.legogroup.io/catalog/default/component/ds_ai_handbook/docs/traditional_ml/docs/maturity_levels/6-mlops-continuous-delivery/#continuous-delivery.
+#
+# Explanation:
+# CD1) The bundle orchestrates all the necessary components for a complete ML pipeline in the right order with workflows.
+# CD2) Deployment with a CI/CD tool deploys source code to cloud infrastructure easily ensuring symmetry between environments.
+
+bundle:
+  name: jg_template
+
+include:
+  - resources/*.yml
+  - resources/**/*.yml
+
+presets:
+  tags:
+    source_template: mlops_template
+
+artifacts:
+  default:
+    dynamic_version: true
+    type: whl
+    build: uv build
+    path: .
+
+variables:
+  environment:
+    description: The deployment environment (dev, qa, prod)
+  team_name:
+    description: The team's top-level workspace folder
+    default: ai_agency
+  catalog:
+    description: The Unity Catalog catalog to use
+    default: sandbox
+  job_name_prefix:
+    description: Prefix put in front of every job name
+    default: ""
+  schema_prefix:
+    description: Prefix shared by every schema this bundle creates
+  general_schema:
+    description: Schema for shared curated tables and lookups
+    default: ${var.schema_prefix}_general_resource
+  lego_ml_product_model_schema:
+    description: Schema for registered models, features, batch predictions, and monitoring
+    default: ${var.schema_prefix}_lego_ml_product_model
+  lego_ml_product_source_table:
+    description: Raw source table the preprocessing job reads
+    default: ai_agency.general_resource.lego_sets_bronze
+  lego_ml_product_feature_store_table_name:
+    description: The name of the feature store table
+    default: lego_set_features
+  lego_ml_product_feature_baseline_table:
+    description: Reference snapshot for data quality and drift monitoring
+    default: lego_set_features_baseline
+  lego_ml_product_model_name:
+    description: The name of the registered model in Unity Catalog
+    default: lego_set_size_predictor
+  lego_ml_product_experiment_name:
+    description: Path of the MLflow experiment
+    default: /Shared/lego_ml_product/experiments/lego_set_size_predictor
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      environment: dev
+      schema_prefix: dev
+    workspace:
+      host: https://adb-dev.azuredatabricks.net
+
+  qa:
+    variables:
+      environment: qa
+      schema_prefix: qa
+    workspace:
+      host: https://adb-staging.azuredatabricks.net
+
+  prod:
+    mode: production
+    variables:
+      environment: prod
+      schema_prefix: prod
+    workspace:
+      host: https://adb-prod.azuredatabricks.net
